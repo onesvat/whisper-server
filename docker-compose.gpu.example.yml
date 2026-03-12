@@ -1,0 +1,75 @@
+services:
+  wyoming-whisper-speaker:
+    image: onesvat/wyoming-whisper-speaker:gpu
+    container_name: wyoming-whisper-speaker
+    volumes:
+      - ./volumes/whisper:/data
+      - ./volumes/voices:/data/voices
+    environment:
+      - TZ=Europe/Istanbul
+      - VOICES_DIR=/data/voices
+      - SPEAKER_THRESHOLD=0.80
+      - VOICE_SCAN_INTERVAL=10
+      - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-large-v3}
+    restart: unless-stopped
+    ports:
+      - 10300:10300
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+    command:
+      [
+        "uv", "run", "wyoming-whisper-speaker",
+        "--model", "${WHISPER_MODEL:-Systran/faster-whisper-large-v3}",
+        "--uri", "tcp://0.0.0.0:10300",
+        "--data-dir", "/data",
+        "--beam-size", "5",
+        "--language", "tr",
+        "--device", "cuda",
+        "--compute-type", "int8"
+      ]
+
+# ============================================================================
+# NVIDIA GPU Configuration Options
+# ============================================================================
+#
+# Prerequisites:
+#   1. Install NVIDIA drivers on host
+#   2. Install NVIDIA Container Toolkit:
+#      Ubuntu/Debian:
+#        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+#        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+#          sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+#          sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+#        sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+#        sudo nvidia-ctk runtime configure --runtime=docker
+#        sudo systemctl restart docker
+#
+# Option 1: Use all GPUs (shown above)
+#   count: all
+#
+# Option 2: Use specific number of GPUs
+#   count: 1  # Use first GPU only
+#
+# Option 3: Use specific GPU by device ID
+#   device_ids: ['0', '2']  # Use GPU 0 and GPU 2
+#
+# Example with specific GPU:
+#   deploy:
+#     resources:
+#       reservations:
+#         devices:
+#           - driver: nvidia
+#             device_ids: ['0']
+#             capabilities:
+#               - gpu
+#
+# Verify GPU access:
+#   docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+#
+# ============================================================================
