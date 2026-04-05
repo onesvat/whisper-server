@@ -15,7 +15,31 @@ env:
   DOCKER_HUB_REPO: onesvat/wyoming-whisper-speaker
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_tag: ${{ steps.version.outputs.is_tag }}
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            IS_TAG="true"
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "is_tag=${IS_TAG}" >> $GITHUB_OUTPUT
+            echo "Building version: ${VERSION} (from git tag)"
+          else
+            VERSION=""
+            IS_TAG="false"
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "is_tag=${IS_TAG}" >> $GITHUB_OUTPUT
+            echo "Building from branch: ${GITHUB_REF#refs/heads/}"
+          fi
+
   build-and-push:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -40,18 +64,40 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKER_HUB_REPO }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ matrix.variant.tag }},priority=1000
-            type=raw,value=${{ matrix.variant.tag }}-{{ date 'YYYYMMDD' }}
+      - name: Generate Docker tags
+        id: tags
+        run: |
+          VARIANT="${{ matrix.variant.tag }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          IS_TAG="${{ needs.prepare.outputs.is_tag }}"
+          REPO="${{ env.DOCKER_HUB_REPO }}"
+          
+          if [[ "$IS_TAG" == "true" ]]; then
+            # Tag push: create versioned tags
+            MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+            TAGS="${REPO}:${VARIANT}-v${VERSION},${REPO}:${VARIANT}-${MAJOR_MINOR},${REPO}:${VARIANT},${REPO}:v${VERSION},${REPO}:${VERSION}"
+            
+            if [[ "$VARIANT" == "gpu" ]]; then
+              TAGS="${TAGS},${REPO}:latest"
+            fi
+            
+            echo "Generated tags (version $VERSION):"
+            echo "$TAGS" | tr ',' '\n'
+          else
+            # Branch push: create date-based tags
+            DATE=$(date +%Y%m%d)
+            BRANCH="${GITHUB_REF#refs/heads/}"
+            TAGS="${REPO}:${VARIANT},${REPO}:${VARIANT}-${DATE},${REPO}:${BRANCH}"
+            
+            if [[ "$VARIANT" == "gpu" && "$BRANCH" == "main" ]]; then
+              TAGS="${TAGS},${REPO}:latest"
+            fi
+            
+            echo "Generated tags (branch $BRANCH):"
+            echo "$TAGS" | tr ',' '\n'
+          fi
+          
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -60,25 +106,27 @@ jobs:
           file: ${{ matrix.variant.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=registry,ref=${{ env.DOCKER_HUB_REPO }}:${{ matrix.variant.tag }}-buildcache
           cache-to: type=registry,ref=${{ env.DOCKER_HUB_REPO }}:${{ matrix.variant.tag }}-buildcache,mode=max
 
-      - name: Update latest tag (GPU only)
-        if: github.event_name != 'pull_request' && matrix.variant.tag == 'gpu' && github.ref == 'refs/heads/main'
-        run: |
-          docker buildx imagetools create -t ${{ env.DOCKER_HUB_REPO }}:latest ${{ env.DOCKER_HUB_REPO }}:gpu
-
   notify:
-    needs: build-and-push
+    needs: [prepare, build-and-push]
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' && success()
     steps:
       - name: Notify on success
         run: |
-          echo "✅ Docker images successfully built and pushed to ${{ env.DOCKER_HUB_REPO }}"
-          echo "Images available:"
-          echo "  - ${{ env.DOCKER_HUB_REPO }}:gpu"
-          echo "  - ${{ env.DOCKER_HUB_REPO }}:cpu"
-          echo "  - ${{ env.DOCKER_HUB_REPO }}:latest"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          IS_TAG="${{ needs.prepare.outputs.is_tag }}"
+          
+          if [[ "$IS_TAG" == "true" ]]; then
+            echo "✅ Docker images v${VERSION} successfully built and pushed"
+            echo "Version tags:"
+            echo "  - gpu-v${VERSION}, cpu-v${VERSION}"
+            echo "  - v${VERSION}, ${VERSION}"
+          else
+            echo "✅ Docker images successfully built and pushed from branch"
+            echo "Branch tags:"
+            echo "  - gpu, cpu, latest"
+          fi
