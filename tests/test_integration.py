@@ -150,43 +150,41 @@ class TestHTTPIntegration:
 class TestWyomingIntegration:
     """Wyoming TCP protocol integration tests."""
 
+    def test_describe_info_exchange(self, wyoming_socket):
+        """Test Describe -> Info exchange."""
+        from wyoming.info import Describe
+        from wyoming.event import write_event
 
-def test_describe_info_exchange(self, wyoming_socket):
-    """Test Describe -> Info exchange."""
-    from wyoming.info import Describe
-    from wyoming.event import write_event
+        describe_event = Describe().event()
+        write_event(describe_event, wyoming_socket.makefile("wb"))
 
-    describe_event = Describe().event()
-    write_event(describe_event, wyoming_socket.makefile("wb"))
+        response = _read_event(wyoming_socket)
+        assert "info" in response.type
 
-    response = _read_event(wyoming_socket)
-    assert "info" in response.type
+    def test_transcribe_audio_chunk(self, wyoming_socket):
+        """Test full transcription flow via Wyoming."""
+        from wyoming.audio import AudioChunk, AudioStop
+        from wyoming.event import write_event, read_event
 
+        wav_path = FIXTURES_DIR / "issai_test_3709.wav"
+        wav_data = wav_path.read_bytes()
+        pcm_data = _wav_to_pcm16(wav_data)
 
-def test_transcribe_audio_chunk(self, wyoming_socket):
-    """Test full transcription flow via Wyoming."""
-    from wyoming.audio import AudioChunk, AudioStop
-    from wyoming.event import write_event, read_event
+        chunk = AudioChunk(rate=16000, width=2, channels=1, audio=pcm_data)
+        write_event(chunk.event(), wyoming_socket.makefile("wb"))
 
-    wav_path = FIXTURES_DIR / "issai_test_3709.wav"
-    wav_data = wav_path.read_bytes()
-    pcm_data = _wav_to_pcm16(wav_data)
+        stop_event = AudioStop().event()
+        write_event(stop_event, wyoming_socket.makefile("wb"))
 
-    chunk = AudioChunk(rate=16000, width=2, channels=1, audio=pcm_data)
-    write_event(chunk.event(), wyoming_socket.makefile("wb"))
+        response = read_event(wyoming_socket.makefile("rb"))
+        assert response is not None
 
-    stop_event = AudioStop().event()
-    write_event(stop_event, wyoming_socket.makefile("wb"))
+        from wyoming.asr import Transcript
 
-    response = read_event(wyoming_socket.makefile("rb"))
-    assert response is not None
-
-    from wyoming.asr import Transcript
-
-    if Transcript.is_type(response.type):
-        transcript = Transcript.from_event(response)
-        expected = EXPECTED_TRANSCRIPTIONS["issai_test_3709.wav"]
-        assert expected[:20] in transcript.text
+        if Transcript.is_type(response.type):
+            transcript = Transcript.from_event(response)
+            expected = EXPECTED_TRANSCRIPTIONS["issai_test_3709.wav"]
+            assert expected[:20] in transcript.text
 
 
 def _wav_to_pcm16(wav_bytes):
