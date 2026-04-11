@@ -15,6 +15,7 @@ from .const import (
     TranscriptionRequest,
     UNSUPPORTED_RESPONSE_FORMATS,
 )
+from .models import is_valid_model_name
 from .service import InvalidTranscriptionRequest, SpeechService
 
 
@@ -88,6 +89,13 @@ async def _handle_audio_request(
     response_format: str,
 ):
     _validate_response_format(response_format)
+
+    if not is_valid_model_name(model):
+        raise InvalidTranscriptionRequest(
+            f"Invalid model '{model}'. Use a predefined alias (tiny, base, medium, large, turbo), "
+            f"a HuggingFace model ID (Organization/model-name), or a local path."
+        )
+
     audio_bytes = await file.read()
     if not audio_bytes:
         raise InvalidTranscriptionRequest("uploaded file is empty")

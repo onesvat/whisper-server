@@ -17,6 +17,32 @@ _LOGGER = logging.getLogger(__name__)
 
 TRANSCRIBER_KEY = Tuple[SttLibrary, str]
 
+PREDEFINED_MODELS: Dict[str, str] = {
+    "tiny.en": "Systran/faster-whisper-tiny.en",
+    "tiny": "Systran/faster-whisper-tiny",
+    "base.en": "Systran/faster-whisper-base.en",
+    "base": "Systran/faster-whisper-base",
+    "small.en": "Systran/faster-whisper-small.en",
+    "small": "Systran/faster-whisper-small",
+    "medium.en": "Systran/faster-whisper-medium.en",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v1": "Systran/faster-whisper-large-v1",
+    "large-v2": "Systran/faster-whisper-large-v2",
+    "large-v3": "Systran/faster-whisper-large-v3",
+    "large": "Systran/faster-whisper-large-v3",
+    "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
+    "distil-medium.en": "Systran/faster-distil-whisper-medium.en",
+    "distil-small.en": "Systran/faster-distil-whisper-small.en",
+    "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
+    "distil-large-v3.5": "distil-whisper/distil-large-v3.5-ct2",
+    "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "tiny.int8": "rhasspy/faster-whisper-tiny-int8",
+    "base.int8": "rhasspy/faster-whisper-base-int8",
+    "small.int8": "rhasspy/faster-whisper-small-int8",
+    "medium.int8": "rhasspy/faster-whisper-medium-int8",
+}
+
 
 class ModelLoader:
     """Load transcribers for models and reuse them across requests."""
@@ -126,10 +152,47 @@ def guess_model(stt_library: SttLibrary, language: Optional[str], is_arm: bool) 
 
 
 def normalize_model_name(model: str) -> str:
-    """Expand legacy short int8 aliases to the full Rhasspy model id."""
-    model_match = re.match(r"^(tiny|base|small|medium)[.-]int8$", model)
-    if not model_match:
-        return model
+    """Normalize predefined aliases to full HuggingFace model IDs.
 
-    model_size = model_match.group(1)
-    return f"rhasspy/faster-whisper-{model_size}-int8"
+    Supports:
+    - Systran models (tiny, base, small, medium, large, large-v1/v2/v3, turbo)
+    - Rhasspy int8 models (tiny.int8, base.int8, small.int8, medium.int8)
+    - Distil variants (distil-large-v2, distil-large-v3, etc.)
+    - Full HuggingFace model IDs (e.g., Systran/faster-whisper-medium)
+    """
+    predefined = PREDEFINED_MODELS.get(model)
+    if predefined:
+        return predefined
+
+    legacy_match = re.match(r"^(tiny|base|small|medium)-int8$", model)
+    if legacy_match:
+        model_size = legacy_match.group(1)
+        return f"rhasspy/faster-whisper-{model_size}-int8"
+
+    return model
+
+
+def is_valid_model_name(model: str) -> bool:
+    """Check if a model name is valid.
+
+    Valid models are:
+    - Predefined aliases (tiny, base, medium, large, etc.)
+    - HuggingFace model IDs (contains "/")
+    - Local paths (absolute or relative)
+    """
+    if not model:
+        return False
+
+    if model in PREDEFINED_MODELS:
+        return True
+
+    if re.match(r"^(tiny|base|small|medium)-int8$", model):
+        return True
+
+    if "/" in model:
+        return True
+
+    if model.startswith("/") or model.startswith(".") or model.startswith("~"):
+        return True
+
+    return False

@@ -11,7 +11,9 @@ class RecordingService:
 
     async def transcribe(self, request):
         if request.model == "speaker:":
-            raise InvalidTranscriptionRequest("speaker: model alias requires a model name")
+            raise InvalidTranscriptionRequest(
+                "speaker: model alias requires a model name"
+            )
 
         self.calls.append(request)
         return TranscriptionResult(text="selam", model="base")
@@ -83,3 +85,43 @@ def test_unsupported_response_format_returns_400():
 
     assert response.status_code == 400
     assert "not supported" in response.json()["error"]["message"]
+
+
+def test_invalid_model_name_returns_400():
+    service = RecordingService()
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/v1/audio/transcriptions",
+        files=_multipart(model="invalid-model-name"),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["type"] == "invalid_request_error"
+    assert "Invalid model" in response.json()["error"]["message"]
+
+
+def test_custom_huggingface_model_is_allowed():
+    """Custom HuggingFace models (with slash) should be accepted."""
+    service = RecordingService()
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/v1/audio/transcriptions",
+        files=_multipart(model="my-org/my-custom-model"),
+    )
+
+    assert response.status_code == 200
+
+
+def test_local_path_is_allowed():
+    """Local paths should be accepted."""
+    service = RecordingService()
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/v1/audio/transcriptions",
+        files=_multipart(model="/data/models/my-model"),
+    )
+
+    assert response.status_code == 200
