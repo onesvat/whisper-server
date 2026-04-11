@@ -6,7 +6,6 @@ import logging
 import math
 import re
 import time
-import wave
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +13,11 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
+from .audio import normalize_audio_file
+from .const import TARGET_SAMPLE_RATE
+
 _LOGGER = logging.getLogger(__name__)
+_SUPPORTED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm"}
 
 
 @dataclass(frozen=True)
@@ -22,7 +25,7 @@ class SpeakerConfig:
     voices_dir: Path
     threshold: float = 0.80
     scan_interval_s: int = 10
-    sample_rate: int = 16000
+    sample_rate: int = TARGET_SAMPLE_RATE
 
 
 class SpeakerRecognizer:
@@ -57,9 +60,11 @@ class SpeakerRecognizer:
         self._last_dir_mtime = dir_mtime
 
         speaker_embeddings: Dict[str, List[np.ndarray]] = defaultdict(list)
+        for audio_path in sorted(voices_dir.iterdir()):
+            if audio_path.suffix.lower() not in _SUPPORTED_AUDIO_EXTENSIONS:
+                continue
 
-        for wav_path in sorted(voices_dir.glob("*.wav")):
-            filename = wav_path.stem.strip()
+            filename = audio_path.stem.strip()
             if not filename:
                 continue
 
@@ -67,12 +72,11 @@ class SpeakerRecognizer:
             name = match.group(1) if match else filename
 
             try:
-                samples, sr = _read_wav_mono_float32(wav_path)
-                samples = _resample_linear(samples, sr, self._config.sample_rate)
-                emb = _embed(samples, self._config.sample_rate)
+                normalized = normalize_audio_file(audio_path)
+                emb = _embed(normalized.samples, self._config.sample_rate)
                 speaker_embeddings[name].append(emb)
             except Exception as err:
-                _LOGGER.warning("Skipping invalid reference %s: %s", wav_path, err)
+                _LOGGER.warning("Skipping invalid reference %s: %s", audio_path, err)
 
         refs: Dict[str, np.ndarray] = {}
         for name, embeddings in speaker_embeddings.items():
@@ -92,23 +96,20 @@ class SpeakerRecognizer:
             sum(len(v) for v in speaker_embeddings.values()),
         )
 
-    def identify(self, wav_path: str) -> Optional[tuple[str, float]]:
+    def identify(self, samples: np.ndarray) -> Optional[tuple[str, float]]:
         """Returns (speaker_name, score) or None if unknown."""
         self.refresh()
         if not self._reference_embeddings:
             return None
 
         try:
-            samples, sr = _read_wav_mono_float32(Path(wav_path))
-            samples = _resample_linear(samples, sr, self._config.sample_rate)
-            emb = _embed(samples, self._config.sample_rate)
+            emb = _embed(np.asarray(samples, dtype=np.float32), self._config.sample_rate)
         except Exception as err:
             _LOGGER.debug("Speaker match failed: %s", err)
             return None
 
         best_name: Optional[str] = None
         best_score = float("-inf")
-
         for name, ref_emb in self._reference_embeddings.items():
             score = float(np.dot(emb, ref_emb))
             if score > best_score:
@@ -122,49 +123,33 @@ class SpeakerRecognizer:
         return (best_name, best_score)
 
 
-def _read_wav_mono_float32(path: Path) -> tuple[np.ndarray, int]:
-    with wave.open(str(path), "rb") as wav_file:
-        channels = wav_file.getnchannels()
-        sample_width = wav_file.getsampwidth()
-        sample_rate = wav_file.getframerate()
-        comp_type = wav_file.getcomptype()
-        frames = wav_file.getnframes()
+def create_speaker_recognizer_from_env() -> Optional[SpeakerRecognizer]:
+    """Build a shared speaker recognizer from environment configuration."""
+    import os
 
-        if comp_type != "NONE":
-            raise ValueError(f"Compressed WAV is not supported: {comp_type}")
+    voices_dir = Path(os.environ.get("VOICES_DIR", "/data/voices"))
+    if not voices_dir.exists():
+        _LOGGER.info(
+            "Speaker recognition available but idle (missing voices dir: %s)", voices_dir
+        )
+        return None
 
-        raw = wav_file.readframes(frames)
-
-    if sample_width == 1:
-        pcm = np.frombuffer(raw, dtype=np.uint8).astype(np.float32)
-        pcm = (pcm - 128.0) / 128.0
-    elif sample_width == 2:
-        pcm = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
-    elif sample_width == 4:
-        pcm = np.frombuffer(raw, dtype="<i4").astype(np.float32) / 2147483648.0
-    else:
-        raise ValueError(f"Unsupported sample width: {sample_width}")
-
-    if channels > 1:
-        pcm = pcm.reshape(-1, channels).mean(axis=1)
-
-    return pcm.astype(np.float32, copy=False), sample_rate
-
-
-def _resample_linear(
-    samples: np.ndarray, src_rate: int, target_rate: int
-) -> np.ndarray:
-    if src_rate == target_rate:
-        return samples
-
-    if samples.size < 2:
-        return samples
-
-    target_len = max(1, int(round(samples.size * target_rate / src_rate)))
-    src_x = np.linspace(0.0, 1.0, num=samples.size, endpoint=True)
-    dst_x = np.linspace(0.0, 1.0, num=target_len, endpoint=True)
-    resampled = np.interp(dst_x, src_x, samples)
-    return resampled.astype(np.float32, copy=False)
+    try:
+        threshold = float(os.environ.get("SPEAKER_THRESHOLD", "0.80"))
+        scan_interval_s = int(os.environ.get("VOICE_SCAN_INTERVAL", "10"))
+        config = SpeakerConfig(
+            voices_dir=voices_dir,
+            threshold=threshold,
+            scan_interval_s=scan_interval_s,
+        )
+        recognizer = SpeakerRecognizer(config=config)
+        _LOGGER.info("Speaker recognition ready. Voices dir: %s", voices_dir)
+        return recognizer
+    except Exception as err:
+        _LOGGER.exception(
+            "Speaker recognition disabled due to initialization error: %s", err
+        )
+        return None
 
 
 def _embed(samples: np.ndarray, sample_rate: int) -> np.ndarray:
@@ -229,7 +214,6 @@ def _mel_filterbank(sample_rate: int, n_fft: int, n_mels: int) -> np.ndarray:
 
     bins = np.floor((n_fft + 1) * hz_points / sample_rate).astype(int)
     n_freqs = n_fft // 2 + 1
-
     fbanks = np.zeros((n_mels, n_freqs), dtype=np.float32)
 
     for m in range(1, n_mels + 1):

@@ -1,7 +1,7 @@
 services:
-  wyoming-whisper-speaker:
-    image: onesvat/wyoming-whisper-speaker:gpu
-    container_name: wyoming-whisper-speaker
+  whisper-server:
+    image: onesvat/whisper-server:gpu
+    container_name: whisper-server
     volumes:
       - ./volumes/whisper:/data
       - ./volumes/voices:/data/voices
@@ -14,6 +14,7 @@ services:
     restart: unless-stopped
     ports:
       - 10300:10300
+      - 8080:8080
     deploy:
       resources:
         reservations:
@@ -24,10 +25,7 @@ services:
                 - gpu
     command:
       [
-        "uv", "run", "wyoming-whisper-speaker",
         "--model", "${WHISPER_MODEL:-Systran/faster-whisper-large-v3}",
-        "--uri", "tcp://0.0.0.0:10300",
-        "--data-dir", "/data",
         "--beam-size", "5",
         "--language", "tr",
         "--device", "cuda",

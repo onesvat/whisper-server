@@ -1,9 +1,9 @@
 services:
-  wyoming-whisper-speaker-cpu:
+  whisper-server-cpu:
     build:
       context: .
       dockerfile: Dockerfile.cpu
-    container_name: wyoming-whisper-speaker
+    container_name: whisper-server
     volumes:
       - ./volumes/whisper:/data
       - ./volumes/voices:/data/voices
@@ -12,16 +12,14 @@ services:
       - VOICES_DIR=/data/voices
       - SPEAKER_THRESHOLD=0.80
       - VOICE_SCAN_INTERVAL=10
-      - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-large-v3}
+      - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-medium}
     restart: unless-stopped
     ports:
       - 10300:10300
+      - 8080:8080
     command:
       [
-        "uv", "run", "wyoming-whisper-speaker",
-        "--model", "${WHISPER_MODEL:-Systran/faster-whisper-large-v3}",
-        "--uri", "tcp://0.0.0.0:10300",
-        "--data-dir", "/data",
+        "--model", "${WHISPER_MODEL:-Systran/faster-whisper-medium}",
         "--beam-size", "5",
         "--language", "tr",
         "--device", "cpu",
@@ -30,11 +28,11 @@ services:
     profiles:
       - cpu
 
-  wyoming-whisper-speaker-gpu:
+  whisper-server-gpu:
     build:
       context: .
       dockerfile: Dockerfile.gpu
-    container_name: wyoming-whisper-speaker
+    container_name: whisper-server
     volumes:
       - ./volumes/whisper:/data
       - ./volumes/voices:/data/voices
@@ -43,10 +41,11 @@ services:
       - VOICES_DIR=/data/voices
       - SPEAKER_THRESHOLD=0.80
       - VOICE_SCAN_INTERVAL=10
-      - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-large-v3}
+      - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-medium}
     restart: unless-stopped
     ports:
       - 10300:10300
+      - 8080:8080
     deploy:
       resources:
         reservations:
@@ -57,10 +56,7 @@ services:
                 - gpu
     command:
       [
-        "uv", "run", "wyoming-whisper-speaker",
-        "--model", "${WHISPER_MODEL:-Systran/faster-whisper-large-v3}",
-        "--uri", "tcp://0.0.0.0:10300",
-        "--data-dir", "/data",
+        "--model", "${WHISPER_MODEL:-Systran/faster-whisper-medium}",
         "--beam-size", "5",
         "--language", "tr",
         "--device", "cuda",

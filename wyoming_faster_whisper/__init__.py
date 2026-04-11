@@ -1,3 +1,5 @@
-"""Wyoming Faster Whisper with speaker labeling."""
+"""Compatibility package for whisper-server."""
 
-__version__ = "1.0.0"
+from whisper_server import __version__
+
+__all__ = ["__version__"]

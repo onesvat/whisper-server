@@ -1,18 +1,23 @@
-# Wyoming Whisper Speaker
+# whisper-server
 
-> Standalone Wyoming Faster Whisper server with speaker recognition and OpenAI API support
+> Shared Wyoming TCP and OpenAI-compatible HTTP speech-to-text service with optional speaker tagging
 
-[![Docker Hub](https://img.shields.io/docker/pulls/onesvat/wyoming-whisper-speaker.svg)](https://hub.docker.com/r/onesvat/wyoming-whisper-speaker)
+[![Docker Hub](https://img.shields.io/docker/pulls/onesvat/whisper-server.svg)](https://hub.docker.com/r/onesvat/whisper-server)
 
 ## ✨ Features
 
-- **Two Transcription Providers**
-  - 🏠 **Local**: Faster-Whisper with CTranslate2 (GPU-accelerated, no API costs)
-  - ☁️ **OpenAI**: GPT-4o transcription API (no GPU required)
+- **Two Protocols, One Process**
+  - Wyoming TCP ASR on `10300`
+  - OpenAI-compatible HTTP STT on `8080`
+  - Shared model cache across both listeners
 
-- **Speaker Recognition**
-  - Automatically identifies speakers from reference voice samples
-  - Tags transcripts with speaker names: `[onur] Hello, how are you?`
+- **Two Transcription Providers**
+  - 🏠 **Local**: Faster-Whisper with CTranslate2
+  - ☁️ **OpenAI**: outbound OpenAI transcription and translation APIs
+
+- **Optional Speaker Recognition**
+  - Speaker tagging is request-scoped via `speaker:<model>`
+  - Tags whole utterances as `[onur] Hello, how are you?`
 
 - **Flexible Model Comparison**
   - Batch compare different models on your audio files
@@ -34,13 +39,14 @@ Best for: Privacy, no API costs, unlimited usage
 # docker-compose.yml
 services:
   whisper:
-    image: wyoming-faster-whisper-gpu-speaker:local
+    image: onesvat/whisper-server:gpu
     environment:
       - TZ=Europe/Istanbul
     volumes:
       - ./data:/data
     ports:
       - "10300:10300"
+      - "8080:8080"
     command: [
       "--model", "large-v3",
       "--language", "tr",
@@ -68,7 +74,7 @@ Best for: Quick setup, no GPU, pay-per-use
 # docker-compose.yml
 services:
   whisper:
-    image: wyoming-faster-whisper-gpu-speaker:local
+    image: onesvat/whisper-server:gpu
     environment:
       - TZ=Europe/Istanbul
       - OPENAI_API_KEY=sk-your-api-key-here
@@ -76,6 +82,7 @@ services:
       - ./data:/data
     ports:
       - "10300:10300"
+      - "8080:8080"
     command: [
       "--provider", "openai",
       "--model", "gpt-4o-transcribe"
@@ -90,17 +97,17 @@ docker compose up -d
 
 ### 1. Speech-to-Text
 
-The service accepts audio through Wyoming protocol and returns transcriptions:
+The service accepts audio through Wyoming or OpenAI-compatible HTTP and returns transcriptions:
 
 ```
-Audio Input → Transcription Provider → Text Output
-                    ↓
-            [Local or OpenAI]
+Wyoming TCP or HTTP Upload → Shared Service Layer → Text Output
+                                     ↓
+                            [Local or OpenAI]
 ```
 
 ### 2. Speaker Recognition
 
-Before transcription, the audio is analyzed to identify the speaker:
+When the requested model is prefixed with `speaker:`, the audio is analyzed to identify the speaker:
 
 ```
 Audio Input → Speaker Matching → [name] Transcribed text
@@ -108,7 +115,24 @@ Audio Input → Speaker Matching → [name] Transcribed text
         Reference voices in /data/voices/
 ```
 
-### 3. Model Comparison Tool
+### 3. OpenAI-Compatible HTTP
+
+`whisper-server` exposes:
+
+- `POST /v1/audio/transcriptions`
+- `POST /v1/audio/translations`
+- `GET /healthz`
+
+Example:
+
+```bash
+curl -X POST http://localhost:8080/v1/audio/transcriptions \
+  -F "file=@sample.wav" \
+  -F "model=speaker:large-v3" \
+  -F "response_format=json"
+```
+
+### 4. Model Comparison Tool
 
 The `compare.py` script helps you test different models:
 
@@ -189,9 +213,11 @@ python3 compare.py --provider openai --last 10
    cp ~/recordings/gamze-sample.wav data/voices/gamze.wav
    ```
 
-2. **Speaker appears in transcripts:**
+2. **Request speaker tagging with the model alias:**
    ```
-   [onur] Bugün nasılsın?
+   curl -X POST http://localhost:8080/v1/audio/transcriptions \
+     -F "file=@sample.wav" \
+     -F "model=speaker:large-v3"
    ```
 
 3. **Adjust threshold if needed:**
@@ -222,7 +248,7 @@ python3 compare.py --last-days 2
 docker run --rm --gpus all \
   --entrypoint python3 \
   -v ./data:/data \
-  wyoming-faster-whisper-gpu-speaker:local \
+  onesvat/whisper-server:gpu \
   /app/compare.py --last 10
 
 # OpenAI models
@@ -230,7 +256,7 @@ docker run --rm \
   --entrypoint python3 \
   -v ./data:/data \
   -e OPENAI_API_KEY=sk-xxx \
-  wyoming-faster-whisper-gpu-speaker:local \
+  onesvat/whisper-server:gpu \
   /app/compare.py --provider openai --last 10
 ```
 
@@ -249,18 +275,18 @@ Results saved to CSV:
 
 ```bash
 # Pull from Docker Hub
-docker pull onesvat/wyoming-whisper-speaker:gpu
-docker pull onesvat/wyoming-whisper-speaker:cpu
+docker pull onesvat/whisper-server:gpu
+docker pull onesvat/whisper-server:cpu
 ```
 
 ### Build Locally
 
 ```bash
 # GPU version
-docker build -f Dockerfile.gpu -t wyoming-faster-whisper-gpu-speaker:local .
+docker build -f Dockerfile.gpu -t whisper-server:gpu .
 
 # CPU version
-docker build -f Dockerfile.cpu -t wyoming-faster-whisper-cpu-speaker:local .
+docker build -f Dockerfile.cpu -t whisper-server:cpu .
 ```
 
 ## ⚙️ Environment Variables
@@ -281,7 +307,7 @@ docker build -f Dockerfile.cpu -t wyoming-faster-whisper-cpu-speaker:local .
 ```yaml
 services:
   whisper:
-    image: wyoming-faster-whisper-gpu-speaker:local
+    image: onesvat/whisper-server:gpu
     container_name: whisper
     restart: unless-stopped
     environment:
@@ -293,6 +319,7 @@ services:
       - ./data/whisper:/data
     ports:
       - "10300:10300"
+      - "8080:8080"
     deploy:
       resources:
         reservations:
@@ -314,7 +341,7 @@ services:
 ```yaml
 services:
   whisper:
-    image: wyoming-faster-whisper-gpu-speaker:local
+    image: onesvat/whisper-server:gpu
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     command: [
@@ -329,16 +356,18 @@ services:
 ### Project Structure
 
 ```
-wyoming-whisper-speaker/
+whisper-server/
 ├── compare.py                    # Model comparison tool
 ├── label_voices.py              # Voice labeling utility
 ├── Dockerfile.gpu               # GPU Docker image
 ├── Dockerfile.cpu               # CPU Docker image
-└── wyoming_faster_whisper/
+└── whisper_server/
     ├── __main__.py              # Entry point
-    ├── models.py                # Model loader
+    ├── service.py               # Shared request orchestration
+    ├── models.py                # Model loader/cache
     ├── const.py                 # Constants
-    ├── dispatch_handler.py      # Wyoming protocol handler
+    ├── wyoming_handler.py       # Wyoming protocol handler
+    ├── http_api.py              # OpenAI-compatible HTTP API
     ├── speaker_recognition.py   # Speaker identification
     ├── faster_whisper_handler.py # Local transcription
     └── openai_transcriber.py    # OpenAI transcription
@@ -354,7 +383,7 @@ pytest tests/
 
 **Q: Which provider should I use?**
 
-A: Use **local** if you have a GPU and want unlimited free transcription. Use **OpenAI** if you don't have a GPU or want the best accuracy with GPT-4o.
+A: Use **local** if you have a GPU and want low-latency reusable models. Use **OpenAI** if you don't have a GPU or want outbound API-backed transcription and translation.
 
 **Q: Which model is best?**
 
@@ -362,7 +391,7 @@ A: For local, use **large-v3** for best accuracy or **turbo** for speed. For Ope
 
 **Q: How accurate is speaker recognition?**
 
-A: Accuracy depends on voice sample quality. Use 10-15 second samples with clear speech. Lower `SPEAKER_THRESHOLD` if matches are missed.
+A: Accuracy depends on voice sample quality. Use 10-15 second samples with clear speech, and request speaker tagging with `speaker:<model>`. Lower `SPEAKER_THRESHOLD` if matches are missed.
 
 **Q: Can I use this without GPU?**
 

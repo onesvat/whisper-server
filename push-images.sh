@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REPO="onesvat/wyoming-whisper-speaker"
+REPO="onesvat/whisper-server"
 VERSION="${1:-latest}"
 
 echo "Building Docker images..."

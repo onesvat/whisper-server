@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOCKER_HUB_REPO: onesvat/wyoming-whisper-speaker
+  DOCKER_HUB_REPO: onesvat/whisper-server
 
 jobs:
   prepare:

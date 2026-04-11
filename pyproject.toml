@@ -1,25 +1,29 @@
 [project]
-name = "wyoming-whisper-speaker"
-version = "1.0.0"
-description = "Wyoming Faster Whisper with GPU and speaker labeling"
+name = "whisper-server"
+version = "1.1.0"
+description = "Dual-protocol Wyoming and OpenAI-compatible speech-to-text service"
 requires-python = ">=3.11"
 dependencies = [
     "wyoming>=1.8,<2",
     "faster-whisper>=1.1.0,<2",
+    "fastapi",
     "numpy",
-    "requests",
     "openai",
+    "python-multipart",
+    "requests",
+    "uvicorn",
 ]
 
 [project.scripts]
-wyoming-whisper-speaker = "wyoming_faster_whisper.__main__:run"
+whisper-server = "whisper_server.__main__:run"
+wyoming-whisper-speaker = "whisper_server.__main__:run"
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-include = ["wyoming_faster_whisper"]
+[tool.setuptools]
+packages = ["whisper_server", "wyoming_faster_whisper"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

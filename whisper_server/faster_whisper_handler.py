@@ -1,15 +1,17 @@
-"""Event handler for clients of the server."""
+"""Local faster-whisper transcriber."""
+
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import faster_whisper
 
-from .const import Transcriber
+from .const import Task, Transcriber
 
 
 class FasterWhisperTranscriber(Transcriber):
-    """Event handler for clients."""
+    """Transcriber backed by faster-whisper."""
 
     def __init__(
         self,
@@ -22,7 +24,6 @@ class FasterWhisperTranscriber(Transcriber):
     ) -> None:
         self.vad_filter = vad_parameters is not None
         self.vad_parameters = vad_parameters
-
         self.model = faster_whisper.WhisperModel(
             model_id,
             download_root=str(cache_dir),
@@ -33,19 +34,19 @@ class FasterWhisperTranscriber(Transcriber):
 
     def transcribe(
         self,
-        wav_path: Union[str, Path],
+        audio,
         language: Optional[str],
+        task: Task = Task.TRANSCRIBE,
         beam_size: int = 5,
         initial_prompt: Optional[str] = None,
     ) -> str:
         segments, _info = self.model.transcribe(
-            str(wav_path),
-            beam_size=beam_size,
+            audio,
             language=language,
+            task=task.value,
+            beam_size=beam_size,
             initial_prompt=initial_prompt,
             vad_filter=self.vad_filter,
             vad_parameters=self.vad_parameters,
         )
-
-        text = " ".join(segment.text for segment in segments)
-        return text
+        return " ".join(segment.text.strip() for segment in segments if segment.text.strip())

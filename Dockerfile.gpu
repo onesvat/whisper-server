@@ -18,14 +18,14 @@ ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN uv pip install --system -e "."
-
+COPY whisper_server/ ./whisper_server/
 COPY wyoming_faster_whisper/ ./wyoming_faster_whisper/
 COPY label_voices.py ./
 COPY compare.py ./
 COPY docker_run.sh ./
+RUN uv pip install --system -e "."
 RUN chmod +x docker_run.sh
 
-EXPOSE 10300
+EXPOSE 10300 8080
 
 ENTRYPOINT ["./docker_run.sh"]

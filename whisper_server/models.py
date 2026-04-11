@@ -1,8 +1,11 @@
-"""Logic for model selection, loading, and transcription."""
+"""Model selection, loading, and caching."""
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import platform
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
@@ -16,7 +19,7 @@ TRANSCRIBER_KEY = Tuple[SttLibrary, str]
 
 
 class ModelLoader:
-    """Load transcribers for models."""
+    """Load transcribers for models and reuse them across requests."""
 
     def __init__(
         self,
@@ -35,10 +38,8 @@ class ModelLoader:
     ) -> None:
         self.preferred_stt_library = preferred_stt_library
         self.preferred_language = preferred_language
-
         self.download_dir = Path(download_dir)
         self.local_files_only = local_files_only
-
         self.model = model
         self.compute_type = compute_type
         self.device = device
@@ -53,47 +54,54 @@ class ModelLoader:
             asyncio.Lock
         )
 
-    async def load_transcriber(self, language: Optional[str] = None) -> Transcriber:
-        """Load or get transcriber from cache for a language."""
+    def resolve_model_name(
+        self, requested_model: Optional[str], language: Optional[str] = None
+    ) -> str:
+        """Resolve the effective model for a request."""
+        model = requested_model or self.model
         language = language or self.preferred_language
-        stt_library = self.preferred_stt_library
 
-        if stt_library == SttLibrary.AUTO:
-            stt_library = SttLibrary.FASTER_WHISPER
-
-        model = self.model
         if model is None:
             if self.provider == "openai":
                 model = "gpt-4o-transcribe"
             else:
                 machine = platform.machine().lower()
                 is_arm = ("arm" in machine) or ("aarch" in machine)
-                model = guess_model(stt_library, language, is_arm)
+                model = guess_model(self.preferred_stt_library, language, is_arm)
 
+        return normalize_model_name(model)
+
+    async def load_transcriber(
+        self, language: Optional[str] = None, requested_model: Optional[str] = None
+    ) -> tuple[str, Transcriber]:
+        """Load or get a cached transcriber for the effective model."""
+        language = language or self.preferred_language
+        stt_library = self.preferred_stt_library
+        if stt_library == SttLibrary.AUTO:
+            stt_library = (
+                SttLibrary.OPENAI
+                if self.provider == "openai"
+                else SttLibrary.FASTER_WHISPER
+            )
+
+        model = self.resolve_model_name(requested_model, language=language)
         _LOGGER.debug(
             "Selected stt-library '%s' with model '%s'", stt_library.value, model
         )
 
-        assert stt_library != SttLibrary.AUTO
-        assert model
-
         key = (stt_library, model)
-
         async with self._transcriber_lock[key]:
             transcriber = self._transcriber.get(key)
             if transcriber is not None:
-                return transcriber
+                return model, transcriber
 
-            # OpenAI provider
             if self.provider == "openai":
                 from .openai_transcriber import OpenAITranscriber
 
                 transcriber = OpenAITranscriber(model_id=model)
             else:
-                # Local faster-whisper provider
                 models_dir = self.download_dir / "models"
                 models_dir.mkdir(parents=True, exist_ok=True)
-
                 transcriber = FasterWhisperTranscriber(
                     model,
                     cache_dir=models_dir,
@@ -105,31 +113,23 @@ class ModelLoader:
 
             self._transcriber[key] = transcriber
 
-        return transcriber
-
-    async def transcribe(
-        self, wav_path: Union[str, Path], language: Optional[str]
-    ) -> str:
-        """Transcribe WAV file using appropriate transcriber.
-
-        Assume WAV file is 16Khz 16-bit mono PCM.
-        """
-        transcriber = await self.load_transcriber(language)
-        text = await asyncio.to_thread(
-            transcriber.transcribe,
-            wav_path,
-            language=language,
-            beam_size=self.beam_size,
-            initial_prompt=self.initial_prompt,
-        )
-        _LOGGER.debug("Transcribed audio: %s", text)
-
-        return text
+        return model, transcriber
 
 
 def guess_model(stt_library: SttLibrary, language: Optional[str], is_arm: bool) -> str:
-    """Automatically guess STT model id."""
+    """Automatically guess a default local STT model."""
+    del stt_library, language
     if is_arm:
         return "rhasspy/faster-whisper-tiny-int8"
 
     return "rhasspy/faster-whisper-base-int8"
+
+
+def normalize_model_name(model: str) -> str:
+    """Expand legacy short int8 aliases to the full Rhasspy model id."""
+    model_match = re.match(r"^(tiny|base|small|medium)[.-]int8$", model)
+    if not model_match:
+        return model
+
+    model_size = model_match.group(1)
+    return f"rhasspy/faster-whisper-{model_size}-int8"
