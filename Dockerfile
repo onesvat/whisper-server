@@ -1,10 +1,16 @@
-FROM python:3.11-slim
+FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
 
+ENV DEBIAN_FRONTEND=noninteractive
 ENV UV_SYSTEM_PYTHON=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3 /usr/bin/python
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
@@ -14,6 +20,8 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY whisper_server/ ./whisper_server/
 COPY wyoming_faster_whisper/ ./wyoming_faster_whisper/
+COPY label_voices.py ./
+COPY compare.py ./
 COPY docker_run.sh ./
 RUN uv pip install --system -e "."
 RUN chmod +x docker_run.sh

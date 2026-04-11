@@ -41,12 +41,6 @@ jobs:
   build-and-push:
     needs: prepare
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        variant:
-          - { dockerfile: 'Dockerfile.gpu', tag: 'gpu' }
-          - { dockerfile: 'Dockerfile.cpu', tag: 'cpu' }
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -67,29 +61,18 @@ jobs:
       - name: Generate Docker tags
         id: tags
         run: |
-          VARIANT="${{ matrix.variant.tag }}"
           VERSION="${{ needs.prepare.outputs.version }}"
           IS_TAG="${{ needs.prepare.outputs.is_tag }}"
           REPO="${{ env.DOCKER_HUB_REPO }}"
           
           if [[ "$IS_TAG" == "true" ]]; then
             MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
-            TAGS="${REPO}:${VARIANT}-v${VERSION},${REPO}:${VARIANT}-${MAJOR_MINOR},${REPO}:${VARIANT}"
-            
-            if [[ "$VARIANT" == "gpu" ]]; then
-              TAGS="${TAGS},${REPO}:v${VERSION},${REPO}:${VERSION},${REPO}:latest"
-            fi
-            
+            TAGS="${REPO}:v${VERSION},${REPO}:${VERSION},${REPO}:${MAJOR_MINOR},${REPO}:latest"
             echo "Generated tags (version $VERSION):"
             echo "$TAGS" | tr ',' '\n'
           else
             BRANCH="${GITHUB_REF#refs/heads/}"
-            TAGS="${REPO}:${VARIANT}"
-            
-            if [[ "$VARIANT" == "gpu" && "$BRANCH" == "main" ]]; then
-              TAGS="${TAGS},${REPO}:latest"
-            fi
-            
+            TAGS="${REPO}:latest"
             echo "Generated tags (branch $BRANCH):"
             echo "$TAGS" | tr ',' '\n'
           fi
@@ -100,7 +83,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ${{ matrix.variant.dockerfile }}
+          file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.tags.outputs.tags }}
@@ -118,12 +101,12 @@ jobs:
           IS_TAG="${{ needs.prepare.outputs.is_tag }}"
           
           if [[ "$IS_TAG" == "true" ]]; then
-            echo "✅ Docker images v${VERSION} successfully built and pushed"
+            echo "✅ Docker image v${VERSION} successfully built and pushed"
             echo "Version tags:"
-            echo "  - gpu-v${VERSION}, cpu-v${VERSION}"
             echo "  - v${VERSION}, ${VERSION}"
+            echo "  - latest"
           else
-            echo "✅ Docker images successfully built and pushed from branch"
+            echo "✅ Docker image successfully built and pushed from branch"
             echo "Branch tags:"
-            echo "  - gpu, cpu, latest"
+            echo "  - latest"
           fi

@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import platform
+import subprocess
 from functools import partial
 from typing import Any, Dict, Optional
 
@@ -24,6 +26,21 @@ from .speaker_recognition import create_speaker_recognizer_from_env
 from .wyoming_handler import WyomingEventHandler
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _detect_device() -> str:
+    """Auto-detect CUDA availability."""
+    if os.environ.get("CUDA_VISIBLE_DEVICES"):
+        return "cuda"
+    try:
+        subprocess.run(["nvidia-smi"], capture_output=True, check=True, timeout=2)
+        return "cuda"
+    except (
+        subprocess.TimeoutExpired,
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+    ):
+        return "cpu"
 
 
 async def main() -> None:
@@ -46,7 +63,9 @@ async def main() -> None:
         help="Enable discovery over zeroconf with optional name (default: whisper-server)",
     )
     parser.add_argument(
-        "--model", default=AUTO_MODEL, help=f"Name of model to use (or {AUTO_MODEL})"
+        "--model",
+        default=os.environ.get("WHISPER_MODEL", AUTO_MODEL),
+        help=f"Name of model to use (or {AUTO_MODEL})",
     )
     parser.add_argument(
         "--data-dir",
@@ -60,33 +79,34 @@ async def main() -> None:
     )
     parser.add_argument(
         "--device",
-        default="cpu",
-        help="Device to use for inference (default: cpu)",
+        default=os.environ.get("WHISPER_DEVICE"),
+        help="Device to use for inference (default: auto-detect cuda/cpu)",
     )
     parser.add_argument(
         "--language",
-        default=AUTO_LANGUAGE,
+        default=os.environ.get("WHISPER_LANGUAGE", AUTO_LANGUAGE),
         help=f"Default language to set for transcription (default: {AUTO_LANGUAGE})",
     )
     parser.add_argument(
         "--compute-type",
-        default="default",
+        default=os.environ.get("WHISPER_COMPUTE_TYPE", "default"),
         help="Compute type (float16, int8, etc.)",
     )
     parser.add_argument(
         "--beam-size",
         type=int,
-        default=0,
+        default=int(os.environ.get("WHISPER_BEAM_SIZE", "0")),
         help="Size of beam during decoding (0 for auto)",
     )
     parser.add_argument(
         "--cpu-threads",
-        default=4,
+        default=int(os.environ.get("WHISPER_CPU_THREADS", "4")),
         type=int,
         help="Number of CPU threads to use for inference (default: 4)",
     )
     parser.add_argument(
         "--initial-prompt",
+        default=os.environ.get("WHISPER_INITIAL_PROMPT"),
         help="Optional text prompt for transcription requests",
     )
     parser.add_argument(
@@ -121,7 +141,7 @@ async def main() -> None:
     parser.add_argument(
         "--provider",
         choices=["local", "openai"],
-        default="local",
+        default=os.environ.get("WHISPER_PROVIDER", "local"),
         help="Transcription provider: local or openai (default: local)",
     )
     parser.add_argument(
@@ -140,6 +160,10 @@ async def main() -> None:
         help="Print version and exit",
     )
     args = parser.parse_args()
+
+    if args.device is None:
+        args.device = _detect_device()
+        _LOGGER.info("Auto-detected device: %s", args.device)
 
     http_enabled = (args.openai_http_host is not None) or (
         args.openai_http_port is not None

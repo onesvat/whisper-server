@@ -1,8 +1,6 @@
 services:
-  whisper-server-cpu:
-    build:
-      context: .
-      dockerfile: Dockerfile.cpu
+  whisper-server:
+    build: .
     container_name: whisper-server
     volumes:
       - ./volumes/whisper:/data
@@ -12,37 +10,11 @@ services:
       - VOICES_DIR=/data/voices
       - SPEAKER_THRESHOLD=0.80
       - VOICE_SCAN_INTERVAL=10
-      - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-medium}
-    restart: unless-stopped
-    ports:
-      - 10300:10300
-      - 8080:8080
-    command:
-      [
-        "--model", "${WHISPER_MODEL:-Systran/faster-whisper-medium}",
-        "--beam-size", "5",
-        "--language", "tr",
-        "--device", "cpu",
-        "--compute-type", "int8"
-      ]
-    profiles:
-      - cpu
-
-  whisper-server-gpu:
-    build:
-      context: .
-      dockerfile: Dockerfile.gpu
-    container_name: whisper-server
-    volumes:
-      - ./volumes/whisper:/data
-      - ./volumes/voices:/data/voices
-    environment:
-      - TZ=Europe/Istanbul
-      - VOICES_DIR=/data/voices
-      - SPEAKER_THRESHOLD=0.80
-      - VOICE_SCAN_INTERVAL=10
-      - WHISPER_MODEL=${WHISPER_MODEL:-Systran/faster-whisper-medium}
-    restart: unless-stopped
+      - WHISPER_MODEL=Systran/faster-whisper-medium
+      - WHISPER_LANGUAGE=tr
+      - WHISPER_BEAM_SIZE=5
+      - WHISPER_COMPUTE_TYPE=int8
+      - WHISPER_CPU_THREADS=4
     ports:
       - 10300:10300
       - 8080:8080
@@ -54,13 +26,4 @@ services:
               count: all
               capabilities:
                 - gpu
-    command:
-      [
-        "--model", "${WHISPER_MODEL:-Systran/faster-whisper-medium}",
-        "--beam-size", "5",
-        "--language", "tr",
-        "--device", "cuda",
-        "--compute-type", "int8"
-      ]
-    profiles:
-      - gpu
+    restart: unless-stopped
