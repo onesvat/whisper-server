@@ -14,6 +14,13 @@ dependencies = [
     "uvicorn",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "requests",
+]
+
 [project.scripts]
 whisper-server = "whisper_server.__main__:run"
 wyoming-whisper-speaker = "whisper_server.__main__:run"
@@ -27,3 +34,6 @@ packages = ["whisper_server", "wyoming_faster_whisper"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: live HTTP/Wyoming tests requiring docker compose (deselect with '-m \"not integration\"')",
+]
