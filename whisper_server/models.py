@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 TRANSCRIBER_KEY = Tuple[SttLibrary, str]
 
-# Strictly Official Systran Models
+# Strictly Official Systran Models + Verified Turbo
 PREDEFINED_MODELS: Dict[str, str] = {
     "tiny": "Systran/faster-whisper-tiny",
     "tiny.en": "Systran/faster-whisper-tiny.en",
@@ -32,7 +32,6 @@ PREDEFINED_MODELS: Dict[str, str] = {
     "large-v3": "Systran/faster-whisper-large-v3",
     "large": "Systran/faster-whisper-large-v3",
     "turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
-    "large-v3-turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
     "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
     "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
 }
