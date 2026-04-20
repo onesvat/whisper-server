@@ -38,11 +38,13 @@ def main():
     parser.add_argument("--expected-json", help="Expected text JSON")
     parser.add_argument("--output", default="results.csv", help="Output file")
     parser.add_argument("--language", default="tr", help="Language code (default: tr)")
+    parser.add_argument("--download-dir", default="/data/models", help="Persistent model storage")
+    parser.add_argument("--local-files-only", action="store_true", help="Don't check HF Hub for updates")
     
     # Selection arguments
-    parser.add_argument("--models", help=f"Comma-separated models (default: {','.join(DEFAULT_MODELS)})")
-    parser.add_argument("--beams", help=f"Comma-separated beam sizes (default: 1,2,3,4,5)")
-    parser.add_argument("--compute-types", help=f"Comma-separated compute types (default: float16,int8_float16)")
+    parser.add_argument("--models", help=f"Comma-separated models")
+    parser.add_argument("--beams", help=f"Comma-separated beam sizes")
+    parser.add_argument("--compute-types", help=f"Comma-separated compute types")
 
     args = parser.parse_args()
 
@@ -78,20 +80,29 @@ def main():
                     "base": "Systran/faster-whisper-base",
                     "small": "Systran/faster-whisper-small",
                     "medium": "Systran/faster-whisper-medium",
+                    "large-v1": "Systran/faster-whisper-large-v1",
                     "large-v2": "Systran/faster-whisper-large-v2",
                     "large-v3": "Systran/faster-whisper-large-v3",
                     "turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
                 }
                 model_id = PREDEFINED.get(model_alias, model_alias)
                 print(f"\n>>> Loading {model_alias} ({compute})...")
-                model = WhisperModel(model_id, device=device, compute_type=compute)
+                
+                # Forced local files if flag is set
+                model = WhisperModel(
+                    model_id, 
+                    device=device, 
+                    compute_type=compute, 
+                    download_root=args.download_dir,
+                    local_files_only=args.local_files_only
+                )
                 vram_loaded = get_vram_usage()
             except Exception as e:
                 print(f"  FAILED to load {model_alias}: {e}")
                 continue
 
             for beam in beams_to_test:
-                print(f"  Testing Beam Size: {beam}")
+                print(f"  Beam Size: {beam}")
                 peak_vram = vram_loaded
 
                 for audio_file in audio_files:
@@ -117,6 +128,7 @@ def main():
                             "wer": round(wer, 4),
                             "text": text
                         })
+                        print(f"    {audio_file.name}: {int(duration*1000)}ms | WER: {wer:.1%} | '{text[:50]}...'")
                     except Exception as e:
                         print(f"    ERROR transcribing {audio_file.name}: {e}")
 
