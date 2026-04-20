@@ -9,6 +9,7 @@ import logging
 import os
 import platform
 import subprocess
+import sys
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -51,20 +52,27 @@ async def main() -> None:
 
     # Serve command
     serve_parser = subparsers.add_parser("serve", help="Start the STT server")
-    serve_parser.add_argument("--uri", help="unix:// or tcp:// for the Wyoming listener")
+    serve_parser.add_argument(
+        "--uri",
+        default=os.environ.get("WHISPER_URI"),
+        help="unix:// or tcp:// for the Wyoming listener",
+    )
     serve_parser.add_argument(
         "--openai-http-host",
+        default=os.environ.get("WHISPER_HTTP_HOST"),
         help="Host for the OpenAI-compatible HTTP listener",
     )
     serve_parser.add_argument(
         "--openai-http-port",
         type=int,
+        default=int(os.environ.get("WHISPER_HTTP_PORT", "0")) or None,
         help="Port for the OpenAI-compatible HTTP listener",
     )
     serve_parser.add_argument(
         "--zeroconf",
         nargs="?",
         const="whisper-server",
+        default=os.environ.get("WHISPER_ZEROCONF"),
         help="Enable discovery over zeroconf with optional name (default: whisper-server)",
     )
     serve_parser.add_argument(
@@ -74,12 +82,13 @@ async def main() -> None:
     )
     serve_parser.add_argument(
         "--data-dir",
-        required=True,
         action="append",
+        default=os.environ.get("WHISPER_DATA_DIR", "").split(",") if os.environ.get("WHISPER_DATA_DIR") else [],
         help="Data directory to check for downloaded models",
     )
     serve_parser.add_argument(
         "--download-dir",
+        default=os.environ.get("WHISPER_DOWNLOAD_DIR"),
         help="Directory to download models into (default: first data dir)",
     )
     serve_parser.add_argument(
@@ -117,30 +126,31 @@ async def main() -> None:
     serve_parser.add_argument(
         "--vad-filter",
         action="store_true",
+        default=os.environ.get("WHISPER_VAD_FILTER", "").lower() == "true",
         help="Enable Silero VAD to reduce hallucinations (local provider only)",
     )
     serve_parser.add_argument(
         "--vad-threshold",
         type=float,
-        default=0.5,
+        default=float(os.environ.get("WHISPER_VAD_THRESHOLD", "0.5")),
         help="VAD speech probability threshold (default: 0.5)",
     )
     serve_parser.add_argument(
         "--vad-min-speech-ms",
         type=int,
-        default=250,
+        default=int(os.environ.get("WHISPER_VAD_MIN_SPEECH_MS", "250")),
         help="VAD minimum speech duration in ms (default: 250)",
     )
     serve_parser.add_argument(
         "--vad-min-silence-ms",
         type=int,
-        default=2000,
+        default=int(os.environ.get("WHISPER_VAD_MIN_SILENCE_MS", "2000")),
         help="VAD minimum silence duration in ms to split (default: 2000)",
     )
     serve_parser.add_argument(
         "--stt-library",
         choices=[lib.value for lib in SttLibrary],
-        default=SttLibrary.AUTO,
+        default=os.environ.get("WHISPER_STT_LIBRARY", SttLibrary.AUTO.value),
         help="Set library to use for speech-to-text",
     )
     serve_parser.add_argument(
@@ -152,30 +162,34 @@ async def main() -> None:
     serve_parser.add_argument(
         "--local-files-only",
         action="store_true",
+        default=os.environ.get("WHISPER_LOCAL_FILES_ONLY", "").lower() == "true",
         help="Don't check HuggingFace hub for model updates",
     )
     serve_parser.add_argument(
         "--keys-file",
+        default=os.environ.get("WHISPER_KEYS_FILE"),
         help="JSON file containing API keys and their rate limits",
     )
     serve_parser.add_argument(
         "--stats-db",
-        help="SQLite file for usage statistics (default: stats.db in first data dir)",
+        default=os.environ.get("WHISPER_STATS_DB"),
+        help="SQLite file for usage statistics",
     )
     serve_parser.add_argument(
         "--storage-dir",
+        default=os.environ.get("WHISPER_STORAGE_DIR"),
         help="Directory to save audio and transcript logs",
     )
     serve_parser.add_argument(
         "--retention-days",
         type=int,
-        default=30,
+        default=int(os.environ.get("WHISPER_RETENTION_DAYS", "30")),
         help="Number of days to keep stored audio (default: 30)",
     )
     serve_parser.add_argument(
         "--retention-max-gb",
         type=float,
-        default=10.0,
+        default=float(os.environ.get("WHISPER_RETENTION_MAX_GB", "10.0")),
         help="Maximum size of storage directory in GB (default: 10.0)",
     )
     serve_parser.add_argument("--debug", action="store_true", help="Log DEBUG messages")
@@ -183,11 +197,30 @@ async def main() -> None:
         "--log-format", default=logging.BASIC_FORMAT, help="Format for log messages"
     )
 
+    # Stats command
+    stats_parser = subparsers.add_parser("stats", help="Show usage statistics")
+    stats_parser.add_argument(
+        "--stats-db",
+        default=os.environ.get("WHISPER_STATS_DB"),
+        help="Path to the statistics SQLite database",
+    )
+    stats_parser.add_argument(
+        "--keys-file",
+        default=os.environ.get("WHISPER_KEYS_FILE"),
+        help="Optional JSON file containing API keys to map names",
+    )
+    stats_parser.add_argument(
+        "--days",
+        type=int,
+        default=int(os.environ.get("WHISPER_STATS_DAYS", "7")),
+        help="Show stats for the last N days (default: 7)",
+    )
+
     # Keys command
     keys_parser = subparsers.add_parser("keys", help="Manage API keys")
     keys_parser.add_argument(
         "--keys-file",
-        required=True,
+        default=os.environ.get("WHISPER_KEYS_FILE"),
         help="Path to the JSON keys file",
     )
     keys_subparsers = keys_parser.add_subparsers(dest="action", help="Action to perform")
@@ -197,16 +230,25 @@ async def main() -> None:
     add_key_parser = keys_subparsers.add_parser("add", help="Add or update a key")
     add_key_parser.add_argument("--key", required=True, help="The API key string")
     add_key_parser.add_argument("--name", required=True, help="Friendly name for the key owner")
-    add_key_parser.add_argument("--limit", default="30/minute", help="Rate limit (e.g. 10/minute, 100/day)")
+    add_key_parser.add_argument("--limit", default="30/minute", help="Rate limit")
     
     del_key_parser = keys_subparsers.add_parser("delete", help="Delete a key")
     del_key_parser.add_argument("--key", required=True, help="The API key string to remove")
 
+    # If no command is provided via CLI, check environment variable
+    if len(sys.argv) == 1 or (len(sys.argv) > 1 and sys.argv[1] not in ["serve", "stats", "keys"]):
+        env_cmd = os.environ.get("WHISPER_CMD")
+        if env_cmd in ["serve", "stats", "keys"]:
+            # Insert the command into sys.argv so argparse sees it
+            sys.argv.insert(1, env_cmd)
+
     args = parser.parse_args()
 
     if args.command == "keys":
+        if not args.keys_file:
+            print("Error: --keys-file or WHISPER_KEYS_FILE is required")
+            return
         from .key_manager import KeyManager
-        # DB path not needed for basic key management
         key_manager = KeyManager(Path(args.keys_file), Path("none"))
         if args.action == "list":
             key_manager.list_keys()
@@ -223,6 +265,9 @@ async def main() -> None:
         return
 
     if args.command == "stats":
+        if not args.stats_db:
+            print("Error: --stats-db or WHISPER_STATS_DB is required")
+            return
         from .key_manager import KeyManager
         key_manager = KeyManager(Path(args.keys_file) if args.keys_file else Path("none"), Path(args.stats_db))
         await key_manager.print_stats_table(days=args.days)
@@ -240,14 +285,19 @@ async def main() -> None:
         args.openai_http_port is not None
     )
     if (args.uri is None) and (not http_enabled):
-        serve_parser.error("configure at least one listener via --uri or --openai-http-port")
-
-    if http_enabled:
+        # Fallback to defaults if neither is specified
         args.openai_http_host = args.openai_http_host or "0.0.0.0"
         args.openai_http_port = args.openai_http_port or 8080
+        http_enabled = True
 
-    if not args.download_dir:
+    if not args.download_dir and args.data_dir:
         args.download_dir = args.data_dir[0]
+    elif not args.download_dir:
+        # Emergency default
+        args.download_dir = "/data"
+
+    if not args.data_dir:
+        args.data_dir = [args.download_dir]
 
     key_manager = None
     if args.keys_file:
