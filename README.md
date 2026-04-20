@@ -100,18 +100,17 @@ Save every request for auditing or training:
 
 ## 🧠 Supported Models (Local)
 
-Only official **Systran** models are included for maximum trust and reliability.
+VRAM requirements are approximate for `float16` (GPU standard) vs `int8` (optimized).
 
-| Alias | Full Model ID | Downloads (Last Month) | Use Case |
-|-------|---------------|------------------------|----------|
-| **tiny** | `Systran/faster-whisper-tiny` | ~1,070,000 | Testing |
-| **base** | `Systran/faster-whisper-base` | ~535,000 | Real-time |
-| **small** | `Systran/faster-whisper-small` | ~387,000 | General use |
-| **medium** | `Systran/faster-whisper-medium` | ~211,000 | Good accuracy |
-| **large-v2** | `Systran/faster-whisper-large-v2` | ~122,000 | High accuracy |
-| **large-v3** | `Systran/faster-whisper-large-v3` | ~751,000 | **Best accuracy** |
-| **turbo** | `deepdml/faster-whisper-large-v3-turbo-ct2` | ~122,000 | Fast + Accurate |
-| **distil-large-v3** | `Systran/faster-distil-whisper-large-v3` | ~47,000 | Fast & Efficient |
+| Alias | Full Model ID | VRAM (fp16) | VRAM (int8) | Use Case |
+|-------|---------------|-------------|-------------|----------|
+| **tiny** | `Systran/faster-whisper-tiny` | 0.6 GB | 0.4 GB | Testing |
+| **base** | `Systran/faster-whisper-base` | 0.7 GB | 0.5 GB | Real-time |
+| **small** | `Systran/faster-whisper-small` | 1.1 GB | 0.8 GB | General use |
+| **medium** | `Systran/faster-whisper-medium` | 2.5 GB | 1.6 GB | Good accuracy |
+| **large-v3** | `Systran/faster-whisper-large-v3` | 4.5 GB | 3.0 GB | **Best Accuracy** |
+| **turbo** | `deepdml/faster-whisper-large-v3-turbo-ct2` | 2.6 GB | 1.6 GB | **Fast + Accurate** |
+| **distil-large-v3** | `Systran/faster-distil-whisper-large-v3` | 2.4 GB | 1.5 GB | Extreme Speed |
 
 ## 🎯 OpenAI-Compatible HTTP API
 
