@@ -128,7 +128,8 @@ def main():
                             "wer": round(wer, 4),
                             "text": text
                         })
-                        print(f"    {audio_file.name}: {int(duration*1000)}ms | WER: {wer:.1%} | '{text[:50]}...'")
+                        # PRINTING FULL TEXT
+                        print(f"    {audio_file.name}: {int(duration*1000)}ms | WER: {wer:.1%} | '{text}'")
                     except Exception as e:
                         print(f"    ERROR transcribing {audio_file.name}: {e}")
 
