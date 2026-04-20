@@ -14,51 +14,52 @@ For a **Production-Grade Turkish Mobile App**, the "Best in Class" configuration
 
 ---
 
-## 📈 Detailed Performance Comparison
+## 💎 Large-v3 Deep Dive: Beam & Compute Comparison
 
-### 1. Accuracy (Word Error Rate)
-Lower is better. 0.0 is perfect understanding.
+This section explores how different settings affect the "Gold Standard" model (`large-v3`) across all 10 sentences.
 
-*   **`large-v3`**: **Absolute Winner.** Hits **0.0 WER** consistently.
-*   **`large-v2`**: **Excellent.** Very stable, near-identical to v3.
-*   **`turbo`**: **Good.** Fast but makes small semantic mistakes (e.g., "zikare" instead of "zeka").
-*   **`distil-v3`**: **Failed.** Transcribed Turkish as English gibberish.
+### 1. Summary of Averages
+| Compute Type | Beam Size | Avg Latency | Load VRAM | Peak VRAM | Avg WER |
+|--------------|-----------|-------------|-----------|-----------|---------|
+| **float16** | 1 | 338ms | 3.7 GB | 3.8 GB | 0.102 |
+| **float16** | 5 | 413ms | 3.7 GB | 3.8 GB | 0.103 |
+| **int8_float16** | **1** | **354ms** | **1.8 GB** | **1.9 GB** | **0.101** |
+| **int8_float16** | 5 | 425ms | 1.8 GB | 1.9 GB | 0.103 |
 
-### 2. Speed & Memory (at int8_float16)
-| Model | Avg Latency | VRAM Load |
-|-------|-------------|-----------|
-| **turbo** | **175ms** | 1.1 GB |
-| **large-v3** | **340ms** | 1.8 GB |
-| **large-v2** | **380ms** | 1.8 GB |
-| **medium** | **150ms** | 1.1 GB |
+**Finding:** `int8_float16` uses **50% less memory** with effectively **identical accuracy and speed**. Beam size 1 is **~20% faster** than beam size 5 with no quality loss for these sentences.
 
 ---
 
-## 📝 Raw Data: What you said vs. What they heard
+### 2. Per-Sentence Analysis (Large-v3)
 
-| File | Expected Text | Top Model Result | Best Model |
-|------|---------------|------------------|------------|
-| **sent01** | Bugün hava çok güzel, parka gidip biraz yürüyüş yapmak istiyorum. | "Bugün hava çok güzel. Parka gidip biraz yürüyüş yapmak istiyorum." | **large-v3** (0.0 WER) |
-| **sent02** | Yarın sabah saat sekizde önemli bir toplantım var... | "Yarın sabah saat 8'de önemli toplantım var. Bu yüzden erken yatmalıyım." | **large-v3** (Stable 8 vs Sekiz) |
-| **sent03** | İstanbul'un tarihi sokaklarında kaybolmak... | "İstanbul'un tarihi sokaklarında kaybolmak insanı bambaşka bir dünyaya götürüyor." | **large-v3** (0.0 WER) |
-| **sent04** | Yapay zeka teknolojileri son yıllarda... | "Yapay zeka teknolojilerinin son yıllarda hayatımızın her alanında devrimini atmaya başladı." | **large-v3** (v2 & Turbo failed) |
-| **sent05** | Annenin yaptığı o meşhur mercimek çorbasının... | "Annenin yaptığı o meşhur mercimek çorbasının tarifini bana hala vermedi." | **large-v3** (0.1 WER) |
-| **sent06** | Kütüphaneye gittiğimde aradığım kitabı... | "Kütüphaneye gittiğimde aradığım kitabı bulamadım ama yerine çok daha ilginç bir eser keşfettim." | **large-v3** (0.0 WER) |
-| **sent07** | Sence teknoloji insanları birbirine yaklaştırıyor mu... | "Sence teknoloji insanları birbirine yaklaştırıyor mu yoksa daha mı yalnızlaştırıyor?" | **large-v3** (0.0 WER) |
-| **sent08** | Gelecek hafta sonu için Şile taraflarında... | "Gelecek hafta sonu için Şile tarafından da küçük bir butik otel ayarlamayı düşünüyoruz." | **large-v3** (Minor typo) |
-| **sent09** | Dün akşam izlediğimiz film o kadar sürükleyiciydi ki... | "Dün akşam izlediğimiz film o kadar sürükleyiciydi ki zamanın nasıl geçtiğini hiç anlamadık." | **large-v3** (0.0 WER) |
-| **sent10** | Lütfen bana en kısa sürede geri dönüş yapın... | "Lütfen bana en kısa sürede geri dönüş yapın çünkü bu konu oldukça acil bir duruma teşkil ediyor." | **large-v3** (0.06 WER) |
+| File | Setting (Type/Beam) | Transcription Result | WER | Result |
+|------|---------------------|----------------------|-----|--------|
+| **sent01** | All Combinations | "Bugün hava çok güzel. Parka gidip biraz yürüyüş yapmak istiyorum." | 0.0 | ✅ Perfect |
+| **sent02** | All Combinations | "Yarın sabah saat 8'de önemli toplantım var. Bu yüzden erken yatmalıyım." | 0.13 | ✅ Smart (8 vs sekiz) |
+| **sent03** | All Combinations | "İstanbul'un tarihi sokaklarında kaybolmak insanı bambaşka bir dünyaya götürüyor." | 0.0 | ✅ Perfect |
+| **sent04** | **int8 / Beam 1** | "...hayatımızın her alanında devrimini atmaya başladı." | 0.27 | ⚠️ Minor Grammar |
+| | float16 / Beam 1 | "...hayatımızın her aralarında devrimini atmaya başladı." | 0.36 | ❌ Hallucination |
+| **sent05** | **int8 / Beam 2** | "...meşhur mercimek çorbasının tarifini bana hala vermedi." | 0.1 | 🏆 Winner |
+| | float16 / Beam 1 | "...meşhur mecbek çorbasının tahipini bana hala vermedi." | 0.3 | ❌ Typos |
+| **sent06** | All Combinations | "Kütüphaneye gittiğimde aradığım kitabı bulamadım ama yerine çok daha ilginç bir eser keşfettim." | 0.0 | ✅ Perfect |
+| **sent07** | All Combinations | "Sence teknoloji insanları birbirine yaklaştırıyor mu yoksa daha mı yalnızlaştırıyor?" | 0.0 | ✅ Perfect |
+| **sent08** | All Combinations | "...Şile tarafından da küçük bir butik otel ayarlamayı düşünüyoruz." | 0.12 | ✅ Minor Grammar |
+| **sent09** | All Combinations | "Dün akşam izlediğimiz film o kadar sürükleyiciydi ki zamanın nasıl geçtiğini hiç anlamadık." | 0.0 | ✅ Perfect |
+| **sent10** | All Combinations | "...çünkü bu konu oldukça acil bir duruma teşkil ediyor." | 0.06 | ✅ Perfect |
 
 ---
 
-## 🔍 Key Findings
+## 🧪 Detailed Comparison Findings
 
-1.  **Numbers & Symbols:** `large-v3` is much smarter at converting speech to digits (e.g., "sekiz" -> "8").
-2.  **Vocabulary:** `turbo` struggled with the word "zeka" (transcribing it as "zikare"), while `large-v3` understood it perfectly.
-3.  **Compound Words:** Turkish agglutination (like "yaklaştırıyor mu") was handled flawlessly by the `large` models even at `beam_size=1`.
+1.  **Memory King:** `int8_float16` is a "no-brainer". It dropped VRAM from **3.8GB to 1.9GB** without adding any Word Error Rate.
+2.  **Beam 1 vs 5:** For sentence 4 and 5 (the hardest ones), Beam 1 actually performed **better** or equal to Beam 5. In Turkish, "Greedy search" (Beam 1) appears very stable for high-end models.
+3.  **Accuracy Paradox:** Surprisingly, `int8_float16` produced slightly better results on Sentence 4 ("her alanında" vs "her aralarında") than the full-weight `float16`. This suggests quantization might actually help reduce some overfitting hallucinations.
 
-## 🛠️ Developer Actions
+## 🛠️ Final Config Recommendation (HTPC)
 
-1.  **Update Config:** Use `large-v3` for production.
-2.  **Enable int8_float16:** Mandatory for saving 2GB VRAM with no quality loss.
-3.  **Beam Size:** Keep it at `1`. The jump to `5` didn't fix the few errors `large-v3` made but doubled the latency.
+```yaml
+- WHISPER_MODEL=large-v3
+- WHISPER_COMPUTE_TYPE=int8_float16
+- WHISPER_BEAM_SIZE=1
+```
+*Latency: ~350ms per request. Accuracy: 90-100% on complex Turkish.*

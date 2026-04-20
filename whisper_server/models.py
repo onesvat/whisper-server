@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 import platform
 import re
+import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .const import SttLibrary, Transcriber
 from .faster_whisper_handler import FasterWhisperTranscriber
@@ -69,6 +71,7 @@ class ModelLoader:
         self.provider = provider
 
         self._transcriber: Dict[TRANSCRIBER_KEY, Transcriber] = {}
+        self._last_used: Dict[TRANSCRIBER_KEY, float] = {}
         self._transcriber_lock: Dict[TRANSCRIBER_KEY, asyncio.Lock] = defaultdict(
             asyncio.Lock
         )
@@ -112,6 +115,7 @@ class ModelLoader:
         async with self._transcriber_lock[key]:
             transcriber = self._transcriber.get(key)
             if transcriber is not None:
+                self._last_used[key] = time.time()
                 return model, transcriber
 
             if self.provider == "openai":
@@ -131,8 +135,119 @@ class ModelLoader:
                 )
 
             self._transcriber[key] = transcriber
+            self._last_used[key] = time.time()
 
         return model, transcriber
+
+    def get_models_info(self) -> List[Dict[str, Any]]:
+        """Get information about available, downloaded, and loaded models."""
+        models_dir = self.download_dir / "models"
+        downloaded_models = set()
+        if models_dir.exists():
+            # faster-whisper/ctranslate2 models are usually directories containing model.bin
+            for p in models_dir.iterdir():
+                if p.is_dir():
+                    # Handle both "Systran/faster-whisper-tiny" and flat "tiny"
+                    # In our download_dir/models, it might be nested or flat.
+                    # faster-whisper uses huggingface_hub which creates nested structures usually,
+                    # but sometimes they are flat if manually downloaded.
+                    downloaded_models.add(p.name)
+                    # Check for nested (org/model)
+                    for sub in p.iterdir():
+                        if sub.is_dir():
+                            downloaded_models.add(f"{p.name}/{sub.name}")
+
+        info = []
+        for alias, model_id in PREDEFINED_MODELS.items():
+            # A model is "downloaded" if its full ID or its last part is in downloaded_models
+            is_downloaded = (
+                model_id in downloaded_models 
+                or model_id.split("/")[-1] in downloaded_models
+                or (models_dir / model_id).exists()
+            )
+            
+            # Check if loaded in memory
+            is_ready = False
+            for (lib, m), _ in self._transcriber.items():
+                if m == model_id:
+                    is_ready = True
+                    break
+
+            info.append({
+                "id": alias,
+                "model_id": model_id,
+                "ready": is_ready,
+                "downloaded": is_downloaded,
+                "available": True
+            })
+
+        # Add currently loaded models that might not be in PREDEFINED_MODELS
+        loaded_ids = {m for (_, m) in self._transcriber.keys()}
+        predefined_ids = set(PREDEFINED_MODELS.values())
+        for model_id in loaded_ids:
+            if model_id not in predefined_ids:
+                info.append({
+                    "id": model_id,
+                    "model_id": model_id,
+                    "ready": True,
+                    "downloaded": True,
+                    "available": True
+                })
+
+        return info
+
+    async def unload_idle_models(self, ttl_seconds: float) -> None:
+        """Unload models that haven't been used for ttl_seconds."""
+        now = time.time()
+        to_unload = []
+
+        for key, last_used in list(self._last_used.items()):
+            if now - last_used > ttl_seconds:
+                to_unload.append(key)
+
+        for key in to_unload:
+            async with self._transcriber_lock[key]:
+                if key in self._transcriber:
+                    _LOGGER.info("Unloading idle model: %s", key[1])
+                    del self._transcriber[key]
+                    del self._last_used[key]
+                    
+                    # Force garbage collection
+                    gc.collect()
+                    
+                    # Try to clear CUDA cache if torch is available
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                    except ImportError:
+                        pass
+
+    async def unload_model(self, model_id: str) -> bool:
+        """Manually unload a model by its ID or alias."""
+        model_id = normalize_model_name(model_id)
+        unloaded = False
+        
+        for key in list(self._transcriber.keys()):
+            if key[1] == model_id:
+                async with self._transcriber_lock[key]:
+                    if key in self._transcriber:
+                        _LOGGER.info("Manually unloading model: %s", model_id)
+                        del self._transcriber[key]
+                        if key in self._last_used:
+                            del self._last_used[key]
+                        unloaded = True
+
+        if unloaded:
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+                
+        return unloaded
 
 
 def guess_model(stt_library: SttLibrary, language: Optional[str], is_arm: bool) -> str:

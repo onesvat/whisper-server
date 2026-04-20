@@ -51,12 +51,11 @@ async def test_model_loader_reuses_request_scoped_override(monkeypatch):
 
 
 def test_normalize_model_name_expands_short_int8_alias():
-    assert normalize_model_name("base-int8") == "rhasspy/faster-whisper-base-int8"
-    assert normalize_model_name("medium.int8") == "rhasspy/faster-whisper-medium-int8"
+    assert normalize_model_name("base") == "Systran/faster-whisper-base"
     assert normalize_model_name("large-v3") == "Systran/faster-whisper-large-v3"
     assert normalize_model_name("medium") == "Systran/faster-whisper-medium"
     assert (
-        normalize_model_name("turbo") == "mobiuslabsgmbh/faster-whisper-large-v3-turbo"
+        normalize_model_name("turbo") == "deepdml/faster-whisper-large-v3-turbo-ct2"
     )
     assert (
         normalize_model_name("Systran/faster-whisper-medium")

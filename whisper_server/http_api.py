@@ -79,6 +79,36 @@ def create_app(service: SpeechService) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/v1/models")
+    async def list_models():
+        """List all available models and their status."""
+        models = service.get_models()
+        # Return in a format similar to OpenAI
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": m["id"],
+                    "object": "model",
+                    "created": 1677610602,  # Dummy timestamp
+                    "owned_by": "whisper-server",
+                    "ready": m["ready"],
+                    "downloaded": m["downloaded"],
+                    "available": m["available"],
+                    "model_id": m["model_id"],
+                }
+                for m in models
+            ]
+        }
+
+    @app.post("/v1/models/{model_id}/unload")
+    async def unload_model(model_id: str, api_key: str = Depends(verify_api_key)):
+        """Manually unload a model from memory."""
+        success = await service.unload_model(model_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Model '{model_id}' not loaded")
+        return {"status": "unloaded", "model": model_id}
+
     def _get_rate_limit(key: str) -> str:
         """Dynamic rate limit based on API key."""
         if not service._key_manager:
