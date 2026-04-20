@@ -110,6 +110,7 @@ Only official **Systran** models are included for maximum trust and reliability.
 | **medium** | `Systran/faster-whisper-medium` | ~211,000 | Good accuracy |
 | **large-v2** | `Systran/faster-whisper-large-v2` | ~122,000 | High accuracy |
 | **large-v3** | `Systran/faster-whisper-large-v3` | ~751,000 | **Best accuracy** |
+| **turbo** | `deepdml/faster-whisper-large-v3-turbo-ct2` | ~122,000 | Fast + Accurate |
 | **distil-large-v3** | `Systran/faster-distil-whisper-large-v3` | ~47,000 | Fast & Efficient |
 
 ## 🎯 OpenAI-Compatible HTTP API
