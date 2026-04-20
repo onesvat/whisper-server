@@ -1,0 +1,10 @@
+{
+  "mobile-app-prod-123": {
+    "name": "iOS Production",
+    "rate_limit": "20/minute"
+  },
+  "dev-test-key-456": {
+    "name": "Developer Test",
+    "rate_limit": "100/minute"
+  }
+}

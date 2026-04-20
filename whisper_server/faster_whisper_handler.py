@@ -39,14 +39,18 @@ class FasterWhisperTranscriber(Transcriber):
         task: Task = Task.TRANSCRIBE,
         beam_size: int = 5,
         initial_prompt: Optional[str] = None,
+        vad_filter: Optional[bool] = None,
     ) -> str:
+        if vad_filter is None:
+            vad_filter = self.vad_filter
+
         segments, _info = self.model.transcribe(
             audio,
             language=language,
             task=task.value,
             beam_size=beam_size,
             initial_prompt=initial_prompt,
-            vad_filter=self.vad_filter,
+            vad_filter=vad_filter,
             vad_parameters=self.vad_parameters,
         )
         return " ".join(segment.text.strip() for segment in segments if segment.text.strip())

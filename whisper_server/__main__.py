@@ -10,6 +10,7 @@ import os
 import platform
 import subprocess
 from functools import partial
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import faster_whisper
@@ -45,121 +46,191 @@ def _detect_device() -> str:
 
 async def main() -> None:
     """Main entry point."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--uri", help="unix:// or tcp:// for the Wyoming listener")
-    parser.add_argument(
+    parser = argparse.ArgumentParser(prog="whisper-server")
+    subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
+
+    # Serve command
+    serve_parser = subparsers.add_parser("serve", help="Start the STT server")
+    serve_parser.add_argument("--uri", help="unix:// or tcp:// for the Wyoming listener")
+    serve_parser.add_argument(
         "--openai-http-host",
         help="Host for the OpenAI-compatible HTTP listener",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--openai-http-port",
         type=int,
         help="Port for the OpenAI-compatible HTTP listener",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--zeroconf",
         nargs="?",
         const="whisper-server",
         help="Enable discovery over zeroconf with optional name (default: whisper-server)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--model",
         default=os.environ.get("WHISPER_MODEL", AUTO_MODEL),
         help=f"Name of model to use (or {AUTO_MODEL})",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--data-dir",
         required=True,
         action="append",
         help="Data directory to check for downloaded models",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--download-dir",
         help="Directory to download models into (default: first data dir)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--device",
         default=os.environ.get("WHISPER_DEVICE"),
         help="Device to use for inference (default: auto-detect cuda/cpu)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--language",
         default=os.environ.get("WHISPER_LANGUAGE", AUTO_LANGUAGE),
         help=f"Default language to set for transcription (default: {AUTO_LANGUAGE})",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--compute-type",
         default=os.environ.get("WHISPER_COMPUTE_TYPE", "default"),
         help="Compute type (float16, int8, etc.)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--beam-size",
         type=int,
         default=int(os.environ.get("WHISPER_BEAM_SIZE", "0")),
         help="Size of beam during decoding (0 for auto)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--cpu-threads",
         default=int(os.environ.get("WHISPER_CPU_THREADS", "4")),
         type=int,
         help="Number of CPU threads to use for inference (default: 4)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--initial-prompt",
         default=os.environ.get("WHISPER_INITIAL_PROMPT"),
         help="Optional text prompt for transcription requests",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--vad-filter",
         action="store_true",
         help="Enable Silero VAD to reduce hallucinations (local provider only)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--vad-threshold",
         type=float,
         default=0.5,
         help="VAD speech probability threshold (default: 0.5)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--vad-min-speech-ms",
         type=int,
         default=250,
         help="VAD minimum speech duration in ms (default: 250)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--vad-min-silence-ms",
         type=int,
         default=2000,
         help="VAD minimum silence duration in ms to split (default: 2000)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--stt-library",
         choices=[lib.value for lib in SttLibrary],
         default=SttLibrary.AUTO,
         help="Set library to use for speech-to-text",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--provider",
         choices=["local", "openai"],
         default=os.environ.get("WHISPER_PROVIDER", "local"),
         help="Transcription provider: local or openai (default: local)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--local-files-only",
         action="store_true",
         help="Don't check HuggingFace hub for model updates",
     )
-    parser.add_argument("--debug", action="store_true", help="Log DEBUG messages")
-    parser.add_argument(
+    serve_parser.add_argument(
+        "--keys-file",
+        help="JSON file containing API keys and their rate limits",
+    )
+    serve_parser.add_argument(
+        "--stats-db",
+        help="SQLite file for usage statistics (default: stats.db in first data dir)",
+    )
+    serve_parser.add_argument(
+        "--storage-dir",
+        help="Directory to save audio and transcript logs",
+    )
+    serve_parser.add_argument(
+        "--retention-days",
+        type=int,
+        default=30,
+        help="Number of days to keep stored audio (default: 30)",
+    )
+    serve_parser.add_argument(
+        "--retention-max-gb",
+        type=float,
+        default=10.0,
+        help="Maximum size of storage directory in GB (default: 10.0)",
+    )
+    serve_parser.add_argument("--debug", action="store_true", help="Log DEBUG messages")
+    serve_parser.add_argument(
         "--log-format", default=logging.BASIC_FORMAT, help="Format for log messages"
     )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=__version__,
-        help="Print version and exit",
+
+    # Keys command
+    keys_parser = subparsers.add_parser("keys", help="Manage API keys")
+    keys_parser.add_argument(
+        "--keys-file",
+        required=True,
+        help="Path to the JSON keys file",
     )
+    keys_subparsers = keys_parser.add_subparsers(dest="action", help="Action to perform")
+    
+    keys_subparsers.add_parser("list", help="List all keys")
+    
+    add_key_parser = keys_subparsers.add_parser("add", help="Add or update a key")
+    add_key_parser.add_argument("--key", required=True, help="The API key string")
+    add_key_parser.add_argument("--name", required=True, help="Friendly name for the key owner")
+    add_key_parser.add_argument("--limit", default="30/minute", help="Rate limit (e.g. 10/minute, 100/day)")
+    
+    del_key_parser = keys_subparsers.add_parser("delete", help="Delete a key")
+    del_key_parser.add_argument("--key", required=True, help="The API key string to remove")
+
     args = parser.parse_args()
+
+    if args.command == "keys":
+        from .key_manager import KeyManager
+        # DB path not needed for basic key management
+        key_manager = KeyManager(Path(args.keys_file), Path("none"))
+        if args.action == "list":
+            key_manager.list_keys()
+        elif args.action == "add":
+            key_manager.add_key(args.key, args.name, args.limit)
+            print(f"Key added/updated: {args.name}")
+        elif args.action == "delete":
+            if key_manager.delete_key(args.key):
+                print(f"Key deleted successfully.")
+            else:
+                print("Key not found.")
+        else:
+            keys_parser.print_help()
+        return
+
+    if args.command == "stats":
+        from .key_manager import KeyManager
+        key_manager = KeyManager(Path(args.keys_file) if args.keys_file else Path("none"), Path(args.stats_db))
+        await key_manager.print_stats_table(days=args.days)
+        return
+
+    if args.command != "serve":
+        parser.print_help()
+        return
 
     if args.device is None:
         args.device = _detect_device()
@@ -169,7 +240,7 @@ async def main() -> None:
         args.openai_http_port is not None
     )
     if (args.uri is None) and (not http_enabled):
-        parser.error("configure at least one listener via --uri or --openai-http-port")
+        serve_parser.error("configure at least one listener via --uri or --openai-http-port")
 
     if http_enabled:
         args.openai_http_host = args.openai_http_host or "0.0.0.0"
@@ -177,6 +248,23 @@ async def main() -> None:
 
     if not args.download_dir:
         args.download_dir = args.data_dir[0]
+
+    key_manager = None
+    if args.keys_file:
+        keys_path = Path(args.keys_file)
+        stats_db_path = Path(args.stats_db) if args.stats_db else Path(args.download_dir) / "stats.db"
+        from .key_manager import KeyManager
+        key_manager = KeyManager(keys_path, stats_db_path)
+        await key_manager.setup_db()
+
+    storage_manager = None
+    if args.storage_dir:
+        from .storage import StorageManager
+        storage_manager = StorageManager(
+            base_dir=Path(args.storage_dir),
+            retention_days=args.retention_days,
+            max_gb=args.retention_max_gb,
+        )
 
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO, format=args.log_format
@@ -225,6 +313,8 @@ async def main() -> None:
     service = SpeechService(
         loader=loader,
         speaker_recognizer=create_speaker_recognizer_from_env(),
+        key_manager=key_manager,
+        storage_manager=storage_manager,
     )
 
     _LOGGER.debug("Pre-loading transcriber")
@@ -233,6 +323,9 @@ async def main() -> None:
     wyoming_info = _build_wyoming_info(display_model)
 
     async with asyncio.TaskGroup() as task_group:
+        if storage_manager:
+            task_group.create_task(storage_manager.run_retention_loop())
+        
         if args.uri:
             task_group.create_task(
                 _run_wyoming_server(

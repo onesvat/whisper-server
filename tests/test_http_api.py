@@ -8,8 +8,9 @@ from whisper_server.service import InvalidTranscriptionRequest
 class RecordingService:
     def __init__(self) -> None:
         self.calls = []
+        self._key_manager = None
 
-    async def transcribe(self, request):
+    async def transcribe(self, request, api_key=None):
         if request.model == "speaker:":
             raise InvalidTranscriptionRequest(
                 "speaker: model alias requires a model name"
@@ -114,14 +115,22 @@ def test_custom_huggingface_model_is_allowed():
     assert response.status_code == 200
 
 
-def test_local_path_is_allowed():
-    """Local paths should be accepted."""
+def test_new_parameters_passed():
     service = RecordingService()
     client = TestClient(create_app(service))
 
     response = client.post(
         "/v1/audio/transcriptions",
-        files=_multipart(model="/data/models/my-model"),
+        files={
+            "file": ("audio.wav", b"fake wav bytes", "audio/wav"),
+            "model": (None, "base"),
+            "vad_filter": (None, "false"),
+            "llm_correct": (None, "true"),
+            "llm_prompt": (None, "Custom Prompt"),
+        },
     )
 
     assert response.status_code == 200
+    assert service.calls[0].vad_filter is False
+    assert service.calls[0].llm_correct is True
+    assert service.calls[0].llm_prompt == "Custom Prompt"

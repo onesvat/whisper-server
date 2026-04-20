@@ -40,8 +40,10 @@ class OpenAITranscriber(Transcriber):
         task: Task = Task.TRANSCRIBE,
         beam_size: int = 5,
         initial_prompt: Optional[str] = None,
+        vad_filter: Optional[bool] = None,
     ) -> str:
         del beam_size
+        del vad_filter
 
         audio_path = Path(audio)
         with audio_path.open("rb") as audio_file:

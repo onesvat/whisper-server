@@ -60,6 +60,9 @@ class TranscriptionRequest:
     task: Task = Task.TRANSCRIBE
     initial_prompt: Optional[str] = None
     speaker_enabled: bool = False
+    vad_filter: bool = True
+    llm_correct: bool = False
+    llm_prompt: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -94,5 +97,6 @@ class Transcriber(ABC):
         task: Task = Task.TRANSCRIBE,
         beam_size: int = 5,
         initial_prompt: Optional[str] = None,
+        vad_filter: Optional[bool] = None,
     ) -> str:
         """Transcribe or translate audio input."""
