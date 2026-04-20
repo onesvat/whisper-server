@@ -8,19 +8,18 @@ import subprocess
 import time
 from pathlib import Path
 
-# Updated Model List (Official + Verified Turbo)
+# Benchmarking models only (Removing Distil for this test)
 MODELS = [
     "tiny",
     "base",
     "small",
     "medium",
+    "large-v2",
     "large-v3",
-    "turbo",
-    "distil-large-v3"
+    "turbo"
 ]
 
 def get_vram_usage():
-    """Get current VRAM usage in MB using nvidia-smi."""
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,nounits,noheader"],
@@ -31,108 +30,113 @@ def get_vram_usage():
         return 0
 
 def calculate_wer(reference, hypothesis):
-    """Simple Word Error Rate calculation."""
-    ref_words = reference.lower().split()
-    hyp_words = hypothesis.lower().split()
-    
+    # Normalize: lower case, remove punctuation
+    ref_words = reference.lower().replace(".", "").replace(",", "").replace("?", "").replace("!", "").split()
+    hyp_words = hypothesis.lower().replace(".", "").replace(",", "").replace("?", "").replace("!", "").split()
     if not ref_words: return 1.0
-    
-    # Simple edit distance logic (simplified for bench)
     import difflib
     sm = difflib.SequenceMatcher(None, ref_words, hyp_words)
     return 1.0 - sm.ratio()
 
 def main():
-    parser = argparse.ArgumentParser(description="Detailed Whisper Model Benchmark")
+    parser = argparse.ArgumentParser(description="Exhaustive Whisper Model Benchmark")
     parser.add_argument("--audio-dir", default="/data/benchmarks", help="Dir with .wav files")
-    parser.add_argument("--expected-json", help="Path to JSON with filename:text mapping")
-    parser.add_argument("--output", default="benchmark_results.csv", help="Output file")
+    parser.add_argument("--expected-json", default="/app/benchmark_data.json", help="Expected text JSON")
+    parser.add_argument("--output", default="/data/benchmarks/results.csv", help="Output file")
+    parser.add_argument("--language", default="tr", help="Language code (tr)")
     args = parser.parse_args()
 
     audio_files = sorted(Path(args.audio_dir).glob("*.wav"))
     expected_texts = {}
-    if args.expected_json:
+    if Path(args.expected_json).exists():
         with open(args.expected_json, "r") as f:
             expected_texts = json.load(f)
 
     results = []
-    device = "cuda" if subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0 else "cpu"
+    try:
+        device = "cuda" if subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0 else "cpu"
+    except:
+        device = "cpu"
 
-    # Test Matrix
-    beam_sizes = [1, 5]
+    # Testing all beam sizes 1-5 and standard compute types
+    beam_sizes = [1, 2, 3, 4, 5]
     compute_types = ["float16", "int8_float16"] if device == "cuda" else ["int8"]
 
     for model_alias in MODELS:
         for compute in compute_types:
+            vram_initial = get_vram_usage()
+            
+            try:
+                from faster_whisper import WhisperModel
+                PREDEFINED = {
+                    "tiny": "Systran/faster-whisper-tiny",
+                    "base": "Systran/faster-whisper-base",
+                    "small": "Systran/faster-whisper-small",
+                    "medium": "Systran/faster-whisper-medium",
+                    "large-v2": "Systran/faster-whisper-large-v2",
+                    "large-v3": "Systran/faster-whisper-large-v3",
+                    "turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
+                }
+                model_id = PREDEFINED.get(model_alias, model_alias)
+                model = WhisperModel(model_id, device=device, compute_type=compute)
+                vram_loaded = get_vram_usage()
+            except Exception as e:
+                print(f"FAILED {model_alias}: {e}")
+                continue
+
             for beam in beam_sizes:
-                print(f"\n>>> Testing: Model={model_alias}, Compute={compute}, Beam={beam}")
-                
-                # Pre-load VRAM
-                vram_start = get_vram_usage()
-                
-                try:
-                    from faster_whisper import WhisperModel
-                    # We use the same logic as our server to resolve names
-                    # For simplicity in this script, we'll map them manually or rely on local cache
-                    # Mapping to match whisper_server/models.py
-                    PREDEFINED = {
-                        "tiny": "Systran/faster-whisper-tiny",
-                        "base": "Systran/faster-whisper-base",
-                        "small": "Systran/faster-whisper-small",
-                        "medium": "Systran/faster-whisper-medium",
-                        "large-v3": "Systran/faster-whisper-large-v3",
-                        "turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
-                        "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
-                    }
-                    model_id = PREDEFINED.get(model_alias, model_alias)
-                    
-                    model = WhisperModel(model_id, device=device, compute_type=compute)
-                    vram_loaded = get_vram_usage()
-                    load_vram = vram_loaded - vram_start
-                except Exception as e:
-                    print(f"FAILED to load {model_alias}: {e}")
-                    continue
+                print(f"\n>>> Testing: Model={model_alias}, Compute={compute}, Beam={beam}, VAD=True")
+                peak_vram = vram_loaded
 
                 for audio_file in audio_files:
                     start_time = time.time()
                     try:
-                        segments, _ = model.transcribe(str(audio_file), language="tr", beam_size=beam)
+                        segments, _ = model.transcribe(
+                            str(audio_file), 
+                            language=args.language, 
+                            beam_size=beam,
+                            vad_filter=True
+                        )
                         text = " ".join([s.text.strip() for s in segments])
                         duration = time.time() - start_time
                         
-                        # Accuracy
-                        wer = 0.0
-                        if audio_file.name in expected_texts:
-                            wer = calculate_wer(expected_texts[audio_file.name], text)
+                        current_vram = get_vram_usage()
+                        if current_vram > peak_vram:
+                            peak_vram = current_vram
+                        
+                        wer = calculate_wer(expected_texts.get(audio_file.name, ""), text)
                         
                         results.append({
                             "model": model_alias,
                             "compute": compute,
                             "beam": beam,
                             "file": audio_file.name,
-                            "time_sec": round(duration, 2),
-                            "vram_mb": load_vram,
+                            "time_ms": int(duration * 1000),
+                            "vram_load_mb": vram_loaded - vram_initial if vram_loaded > 0 else 0,
+                            "vram_peak_mb": peak_vram - vram_initial if peak_vram > 0 else 0,
                             "wer": round(wer, 4),
                             "text": text
                         })
-                        print(f"  {audio_file.name}: {duration:.2f}s | WER: {wer:.2%}")
+                        print(f"  {audio_file.name}: {int(duration*1000)}ms | WER: {wer:.1%}")
                     except Exception as e:
                         print(f"  {audio_file.name}: ERROR {e}")
 
-                # Cleanup
-                del model
-                gc.collect()
-                if device == "cuda":
-                    import torch
-                    torch.cuda.empty_cache()
+            del model
+            gc.collect()
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except:
+                pass
 
-    # Save to CSV
-    with open(args.output, "w", newline="") as f:
+    if not results: return
+
+    with open(args.output, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
-        writer.writerow({fn: fn for fn in results[0].keys()})
+        writer.writeheader()
         writer.writerows(results)
 
-    print(f"\nDone! Results saved to {args.output}")
+    print(f"\nBenchmark finished. Results saved to {args.output}")
 
 if __name__ == "__main__":
     main()
