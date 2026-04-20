@@ -192,12 +192,6 @@ async def main() -> None:
         default=float(os.environ.get("WHISPER_RETENTION_MAX_GB", "10.0")),
         help="Maximum size of storage directory in GB (default: 10.0)",
     )
-    serve_parser.add_argument(
-        "--model-ttl",
-        type=int,
-        default=int(os.environ.get("WHISPER_MODEL_TTL", "30")),
-        help="Number of minutes to keep an idle model in memory (default: 30, 0 to disable)",
-    )
     serve_parser.add_argument("--debug", action="store_true", help="Log DEBUG messages")
     serve_parser.add_argument(
         "--log-format", default=logging.BASIC_FORMAT, help="Format for log messages"
@@ -378,14 +372,10 @@ async def main() -> None:
 
     wyoming_info = _build_wyoming_info(display_model)
 
-async with asyncio.TaskGroup() as task_group:
+    async with asyncio.TaskGroup() as task_group:
         if storage_manager:
             task_group.create_task(storage_manager.run_retention_loop())
         
-        if args.model_ttl > 0:
-            _LOGGER.info("Idle model unloading enabled (TTL: %d minutes)", args.model_ttl)
-            task_group.create_task(_run_model_unload_loop(service, args.model_ttl * 60))
-
         if args.uri:
             task_group.create_task(
                 _run_wyoming_server(
@@ -404,16 +394,6 @@ async with asyncio.TaskGroup() as task_group:
                     debug=args.debug,
                 )
             )
-
-
-async def _run_model_unload_loop(service: SpeechService, ttl_seconds: float) -> None:
-    """Periodically check for and unload idle models."""
-    while True:
-        try:
-            await asyncio.sleep(60)  # Check every minute
-            await service.unload_idle_models(ttl_seconds)
-        except Exception as err:
-            _LOGGER.error("Error in model unload loop: %s", err)
 
 
 def _build_wyoming_info(model_name: str) -> Info:

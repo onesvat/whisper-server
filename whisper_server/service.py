@@ -54,18 +54,6 @@ class SpeechService:
     def provider(self) -> str:
         return self._loader.provider
 
-    def get_models(self) -> list[dict[str, Any]]:
-        """Return list of models with their status."""
-        return self._loader.get_models_info()
-
-    async def unload_model(self, model_id: str) -> bool:
-        """Unload a specific model from memory."""
-        return await self._loader.unload_model(model_id)
-
-    async def unload_idle_models(self, ttl_seconds: float) -> None:
-        """Unload models that have been idle for too long."""
-        await self._loader.unload_idle_models(ttl_seconds)
-
     async def warmup(
         self, model: Optional[str] = None, language: Optional[str] = None
     ) -> str:
