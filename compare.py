@@ -8,16 +8,10 @@ import subprocess
 import time
 from pathlib import Path
 
-# Benchmarking models only (Removing Distil for this test)
-MODELS = [
-    "tiny",
-    "base",
-    "small",
-    "medium",
-    "large-v2",
-    "large-v3",
-    "turbo"
-]
+# Defaults
+DEFAULT_MODELS = ["tiny", "base", "small", "medium", "large-v2", "large-v3", "turbo"]
+DEFAULT_BEAMS = [1, 2, 3, 4, 5]
+DEFAULT_COMPUTE = ["float16", "int8_float16"]
 
 def get_vram_usage():
     try:
@@ -30,7 +24,7 @@ def get_vram_usage():
         return 0
 
 def calculate_wer(reference, hypothesis):
-    # Normalize: lower case, remove punctuation
+    if not reference: return 0.0
     ref_words = reference.lower().replace(".", "").replace(",", "").replace("?", "").replace("!", "").split()
     hyp_words = hypothesis.lower().replace(".", "").replace(",", "").replace("?", "").replace("!", "").split()
     if not ref_words: return 1.0
@@ -39,16 +33,31 @@ def calculate_wer(reference, hypothesis):
     return 1.0 - sm.ratio()
 
 def main():
-    parser = argparse.ArgumentParser(description="Exhaustive Whisper Model Benchmark")
-    parser.add_argument("--audio-dir", default="/data/benchmarks", help="Dir with .wav files")
-    parser.add_argument("--expected-json", default="/app/benchmark_data.json", help="Expected text JSON")
-    parser.add_argument("--output", default="/data/benchmarks/results.csv", help="Output file")
-    parser.add_argument("--language", default="tr", help="Language code (tr)")
+    parser = argparse.ArgumentParser(description="Customizable Whisper Model Benchmark")
+    parser.add_argument("--audio-dir", required=True, help="Dir with .wav files")
+    parser.add_argument("--expected-json", help="Expected text JSON")
+    parser.add_argument("--output", default="results.csv", help="Output file")
+    parser.add_argument("--language", default="tr", help="Language code (default: tr)")
+    
+    # Selection arguments
+    parser.add_argument("--models", help=f"Comma-separated models (default: {','.join(DEFAULT_MODELS)})")
+    parser.add_argument("--beams", help=f"Comma-separated beam sizes (default: 1,2,3,4,5)")
+    parser.add_argument("--compute-types", help=f"Comma-separated compute types (default: float16,int8_float16)")
+
     args = parser.parse_args()
 
+    # Parse selections
+    models_to_test = args.models.split(",") if args.models else DEFAULT_MODELS
+    beams_to_test = [int(b) for b in args.beams.split(",")] if args.beams else DEFAULT_BEAMS
+    compute_to_test = args.compute_types.split(",") if args.compute_types else DEFAULT_COMPUTE
+
     audio_files = sorted(Path(args.audio_dir).glob("*.wav"))
+    if not audio_files:
+        print(f"Error: No .wav files found in {args.audio_dir}")
+        return
+
     expected_texts = {}
-    if Path(args.expected_json).exists():
+    if args.expected_json and Path(args.expected_json).exists():
         with open(args.expected_json, "r") as f:
             expected_texts = json.load(f)
 
@@ -58,12 +67,8 @@ def main():
     except:
         device = "cpu"
 
-    # Testing all beam sizes 1-5 and standard compute types
-    beam_sizes = [1, 2, 3, 4, 5]
-    compute_types = ["float16", "int8_float16"] if device == "cuda" else ["int8"]
-
-    for model_alias in MODELS:
-        for compute in compute_types:
+    for model_alias in models_to_test:
+        for compute in compute_to_test:
             vram_initial = get_vram_usage()
             
             try:
@@ -78,31 +83,26 @@ def main():
                     "turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
                 }
                 model_id = PREDEFINED.get(model_alias, model_alias)
+                print(f"\n>>> Loading {model_alias} ({compute})...")
                 model = WhisperModel(model_id, device=device, compute_type=compute)
                 vram_loaded = get_vram_usage()
             except Exception as e:
-                print(f"FAILED {model_alias}: {e}")
+                print(f"  FAILED to load {model_alias}: {e}")
                 continue
 
-            for beam in beam_sizes:
-                print(f"\n>>> Testing: Model={model_alias}, Compute={compute}, Beam={beam}, VAD=True")
+            for beam in beams_to_test:
+                print(f"  Testing Beam Size: {beam}")
                 peak_vram = vram_loaded
 
                 for audio_file in audio_files:
                     start_time = time.time()
                     try:
-                        segments, _ = model.transcribe(
-                            str(audio_file), 
-                            language=args.language, 
-                            beam_size=beam,
-                            vad_filter=True
-                        )
+                        segments, _ = model.transcribe(str(audio_file), language=args.language, beam_size=beam, vad_filter=True)
                         text = " ".join([s.text.strip() for s in segments])
                         duration = time.time() - start_time
                         
                         current_vram = get_vram_usage()
-                        if current_vram > peak_vram:
-                            peak_vram = current_vram
+                        if current_vram > peak_vram: peak_vram = current_vram
                         
                         wer = calculate_wer(expected_texts.get(audio_file.name, ""), text)
                         
@@ -117,9 +117,8 @@ def main():
                             "wer": round(wer, 4),
                             "text": text
                         })
-                        print(f"  {audio_file.name}: {int(duration*1000)}ms | WER: {wer:.1%}")
                     except Exception as e:
-                        print(f"  {audio_file.name}: ERROR {e}")
+                        print(f"    ERROR transcribing {audio_file.name}: {e}")
 
             del model
             gc.collect()
@@ -129,14 +128,12 @@ def main():
             except:
                 pass
 
-    if not results: return
-
-    with open(args.output, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=results[0].keys())
-        writer.writeheader()
-        writer.writerows(results)
-
-    print(f"\nBenchmark finished. Results saved to {args.output}")
+    if results:
+        with open(args.output, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=results[0].keys())
+            writer.writeheader()
+            writer.writerows(results)
+        print(f"\nBenchmark finished. Results saved to {args.output}")
 
 if __name__ == "__main__":
     main()
