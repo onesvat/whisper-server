@@ -12,6 +12,9 @@ dependencies = [
     "python-multipart",
     "requests",
     "uvicorn",
+    "slowapi",
+    "aiosqlite",
+    "aiofiles",
 ]
 
 [project.optional-dependencies]
