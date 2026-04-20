@@ -100,18 +100,17 @@ Save every request for auditing or training:
 
 ## 🧠 Supported Models (Local)
 
-The server supports the official **Systran** models. These are pre-cached and optimized for `faster-whisper`.
+Only official **Systran** models are included for maximum trust and reliability.
 
 | Alias | Full Model ID | Downloads (Last Month) | Use Case |
 |-------|---------------|------------------------|----------|
-| **tiny** | `Systran/faster-whisper-tiny` | ~1,164,000 | Testing |
-| **base** | `Systran/faster-whisper-base` | ~524,000 | Real-time |
-| **small** | `Systran/faster-whisper-small` | ~394,000 | General use |
-| **medium** | `Systran/faster-whisper-medium` | ~209,000 | Good accuracy |
-| **large-v2** | `Systran/faster-whisper-large-v2` | ~150,000 | High accuracy |
-| **large-v3** | `Systran/faster-whisper-large-v3` | ~750,000 | Best accuracy |
-| **turbo** | `Systran/faster-whisper-large-v3-turbo` | ~122,000 | **Fast + Accurate** |
-| **distil-large-v3** | `Systran/faster-distil-whisper-large-v3` | ~85,000 | Extreme Speed |
+| **tiny** | `Systran/faster-whisper-tiny` | ~1,070,000 | Testing |
+| **base** | `Systran/faster-whisper-base` | ~535,000 | Real-time |
+| **small** | `Systran/faster-whisper-small` | ~387,000 | General use |
+| **medium** | `Systran/faster-whisper-medium` | ~211,000 | Good accuracy |
+| **large-v2** | `Systran/faster-whisper-large-v2` | ~122,000 | High accuracy |
+| **large-v3** | `Systran/faster-whisper-large-v3` | ~751,000 | **Best accuracy** |
+| **distil-large-v3** | `Systran/faster-distil-whisper-large-v3` | ~47,000 | Fast & Efficient |
 
 ## 🎯 OpenAI-Compatible HTTP API
 

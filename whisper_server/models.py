@@ -17,18 +17,20 @@ _LOGGER = logging.getLogger(__name__)
 
 TRANSCRIBER_KEY = Tuple[SttLibrary, str]
 
+# Strictly Official Systran Models
 PREDEFINED_MODELS: Dict[str, str] = {
-    # Official Systran Models (Recommended)
     "tiny": "Systran/faster-whisper-tiny",
+    "tiny.en": "Systran/faster-whisper-tiny.en",
     "base": "Systran/faster-whisper-base",
+    "base.en": "Systran/faster-whisper-base.en",
     "small": "Systran/faster-whisper-small",
+    "small.en": "Systran/faster-whisper-small.en",
     "medium": "Systran/faster-whisper-medium",
+    "medium.en": "Systran/faster-whisper-medium.en",
+    "large-v1": "Systran/faster-whisper-large-v1",
     "large-v2": "Systran/faster-whisper-large-v2",
     "large-v3": "Systran/faster-whisper-large-v3",
     "large": "Systran/faster-whisper-large-v3",
-    "turbo": "Systran/faster-whisper-large-v3-turbo",
-    
-    # Distil Variants (Fast & Efficient)
     "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
     "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
 }
@@ -142,13 +144,7 @@ def guess_model(stt_library: SttLibrary, language: Optional[str], is_arm: bool) 
 
 
 def normalize_model_name(model: str) -> str:
-    """Normalize predefined aliases to full HuggingFace model IDs.
-
-    Supports:
-    - Official Systran models (tiny, base, small, medium, large, turbo)
-    - Distil variants (distil-large-v2, distil-large-v3)
-    - Full HuggingFace model IDs (e.g., Systran/faster-whisper-medium)
-    """
+    """Normalize predefined aliases to full HuggingFace model IDs."""
     predefined = PREDEFINED_MODELS.get(model)
     if predefined:
         return predefined
@@ -157,13 +153,7 @@ def normalize_model_name(model: str) -> str:
 
 
 def is_valid_model_name(model: str) -> bool:
-    """Check if a model name is valid.
-
-    Valid models are:
-    - Predefined aliases (tiny, base, medium, large, etc.)
-    - HuggingFace model IDs (contains "/")
-    - Local paths (absolute or relative)
-    """
+    """Check if a model name is valid."""
     if not model:
         return False
 
