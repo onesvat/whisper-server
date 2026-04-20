@@ -24,6 +24,8 @@ class FasterWhisperTranscriber(Transcriber):
     ) -> None:
         self.vad_filter = vad_parameters is not None
         self.vad_parameters = vad_parameters
+        self.compute_type = compute_type
+        self.device = device
         self.model = faster_whisper.WhisperModel(
             model_id,
             download_root=str(cache_dir),

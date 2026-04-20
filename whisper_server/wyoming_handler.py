@@ -85,7 +85,7 @@ class WyomingEventHandler(AsyncEventHandler):
                     language=self._language,
                 )
             )
-            _LOGGER.info(result.text)
+            _LOGGER.debug(result.text)
             await self.write_event(Transcript(text=result.text).event())
 
             if self._save_audio_dir:

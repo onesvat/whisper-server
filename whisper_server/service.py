@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from dataclasses import replace
 from typing import Optional
 
@@ -80,6 +81,7 @@ class SpeechService:
             except Exception as err:
                 raise InvalidTranscriptionRequest(f"failed to decode audio: {err}") from err
 
+        start_time = time.perf_counter()
         if self.provider == "openai":
             text = await asyncio.to_thread(
                 self._transcribe_openai,
@@ -97,6 +99,19 @@ class SpeechService:
                 request.initial_prompt,
                 request.vad_filter,
             )
+        end_time = time.perf_counter()
+        duration = end_time - start_time
+
+        _LOGGER.info(
+            "Transcription finished: model=%s, duration=%.2fs, beam_size=%s, compute_type=%s, device=%s, provider=%s, output=%r",
+            resolved_model,
+            duration,
+            self._loader.beam_size if self.provider != "openai" else "N/A",
+            getattr(transcriber, "compute_type", "N/A"),
+            getattr(transcriber, "device", "N/A"),
+            self.provider,
+            text,
+        )
 
         raw_text = text
         llm_text = None

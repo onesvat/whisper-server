@@ -7,6 +7,7 @@ services:
       - ./volumes/voices:/data/voices
     environment:
       - TZ=Europe/Istanbul
+      - PYTHONUNBUFFERED=1
       - VOICES_DIR=/data/voices
       - SPEAKER_THRESHOLD=0.80
       - VOICE_SCAN_INTERVAL=10
