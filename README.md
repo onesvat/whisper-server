@@ -98,6 +98,21 @@ Save every request for auditing or training:
 *   The server saves the original `.wav`, the raw transcript, and the LLM-corrected version.
 *   Old data is automatically deleted after $N$ days or when the directory exceeds $X$ GB.
 
+## 🧠 Supported Models (Local)
+
+The server supports the official **Systran** models. These are pre-cached and optimized for `faster-whisper`.
+
+| Alias | Full Model ID | Downloads (Last Month) | Use Case |
+|-------|---------------|------------------------|----------|
+| **tiny** | `Systran/faster-whisper-tiny` | ~1,164,000 | Testing |
+| **base** | `Systran/faster-whisper-base` | ~524,000 | Real-time |
+| **small** | `Systran/faster-whisper-small` | ~394,000 | General use |
+| **medium** | `Systran/faster-whisper-medium` | ~209,000 | Good accuracy |
+| **large-v2** | `Systran/faster-whisper-large-v2` | ~150,000 | High accuracy |
+| **large-v3** | `Systran/faster-whisper-large-v3` | ~750,000 | Best accuracy |
+| **turbo** | `Systran/faster-whisper-large-v3-turbo` | ~122,000 | **Fast + Accurate** |
+| **distil-large-v3** | `Systran/faster-distil-whisper-large-v3` | ~85,000 | Extreme Speed |
+
 ## 🎯 OpenAI-Compatible HTTP API
 
 Exposes:
