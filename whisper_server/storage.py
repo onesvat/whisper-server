@@ -37,22 +37,26 @@ class StorageManager:
         key_name: str,
     ) -> str:
         """Save audio and text results to disk."""
+        now = datetime.datetime.now()
+        timestamp_str = now.strftime("%H%M%S")
         request_id = str(uuid.uuid4())
-        today = datetime.date.today().isoformat()
+        file_prefix = f"{timestamp_str}_{request_id}"
+        
+        today = now.date().isoformat()
         day_dir = self.base_dir / today
         day_dir.mkdir(parents=True, exist_ok=True)
 
         # Save audio
-        audio_path = day_dir / f"{request_id}.wav"
+        audio_path = day_dir / f"{file_prefix}.wav"
         async with aiofiles.open(audio_path, mode="wb") as f:
             await f.write(audio_data)
 
         # Save metadata and results
-        meta_path = day_dir / f"{request_id}_result.json"
+        meta_path = day_dir / f"{file_prefix}_result.json"
         import json
         result_data = {
             "id": request_id,
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": now.isoformat(),
             "key_name": key_name,
             "raw_text": raw_text,
             "llm_text": llm_text,
