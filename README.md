@@ -122,8 +122,12 @@ Exposes:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `vad_filter` | bool | `true` | Enable/disable Silero VAD |
+| `response_format` | string | `json` | `json`, `text`, or local-only `verbose_json` |
+| `word_timestamps` | bool | `false` | Include per-word timestamps inside `verbose_json` segments |
 | `llm_correct` | bool | `false` | Enable LLM post-processing |
 | `llm_prompt` | string | - | Custom system prompt for the LLM |
+
+`verbose_json` is supported only by the local `faster-whisper` provider. It cannot be combined with `llm_correct=true` or `speaker:<model>` aliases. `word_timestamps=true` is only valid when `response_format=verbose_json`.
 
 **Example with Auth:**
 ```bash
@@ -132,6 +136,15 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
   -F "file=@sample.wav" \
   -F "model=large-v3" \
   -F "llm_correct=true"
+```
+
+**Example `verbose_json` with word timestamps:**
+```bash
+curl -X POST http://localhost:8080/v1/audio/transcriptions \
+  -F "file=@sample.wav" \
+  -F "model=large-v3" \
+  -F "response_format=verbose_json" \
+  -F "word_timestamps=true"
 ```
 
 ## ⚙️ Environment Variables

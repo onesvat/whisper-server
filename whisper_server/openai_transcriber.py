@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Optional, Union
 
-from .const import Task, Transcriber
+from .const import Task, Transcriber, TranscriptionResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,9 +41,11 @@ class OpenAITranscriber(Transcriber):
         beam_size: int = 5,
         initial_prompt: Optional[str] = None,
         vad_filter: Optional[bool] = None,
-    ) -> str:
+        word_timestamps: bool = False,
+    ) -> TranscriptionResult:
         del beam_size
         del vad_filter
+        del word_timestamps
 
         audio_path = Path(audio)
         with audio_path.open("rb") as audio_file:
@@ -58,4 +60,4 @@ class OpenAITranscriber(Transcriber):
                     kwargs["language"] = language
                 response = self._client.audio.transcriptions.create(**kwargs)
 
-        return response.text
+        return TranscriptionResult(text=response.text, model=self.model_id)

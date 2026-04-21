@@ -89,14 +89,14 @@ class SpeechService:
 
         start_time = time.perf_counter()
         if self.provider == "openai":
-            text = await asyncio.to_thread(
+            transcription = await asyncio.to_thread(
                 self._transcribe_openai,
                 transcriber,
                 request,
             )
         else:
             assert normalized_audio is not None
-            text = await asyncio.to_thread(
+            transcription = await asyncio.to_thread(
                 transcriber.transcribe,
                 normalized_audio.samples,
                 request.language,
@@ -104,7 +104,10 @@ class SpeechService:
                 self._loader.beam_size,
                 request.initial_prompt,
                 request.vad_filter,
+                request.word_timestamps,
             )
+        transcription = self._coerce_transcription_result(transcription, resolved_model)
+        text = transcription.text
         end_time = time.perf_counter()
         duration = end_time - start_time
 
@@ -156,6 +159,9 @@ class SpeechService:
         return TranscriptionResult(
             text=text,
             model=resolved_model,
+            language=transcription.language,
+            duration=transcription.duration,
+            segments=transcription.segments,
             speaker=speaker,
             speaker_score=speaker_score,
         )
@@ -250,7 +256,9 @@ class SpeechService:
         self._model_last_used[model_id] = time.monotonic()
 
     @staticmethod
-    def _transcribe_openai(transcriber, request: TranscriptionRequest) -> str:
+    def _transcribe_openai(
+        transcriber, request: TranscriptionRequest
+    ) -> str | TranscriptionResult:
         with temporary_audio_file(request.audio) as audio_path:
             return transcriber.transcribe(
                 audio_path,
@@ -258,7 +266,17 @@ class SpeechService:
                 request.task,
                 initial_prompt=request.initial_prompt,
                 vad_filter=request.vad_filter,
+                word_timestamps=request.word_timestamps,
             )
+
+    @staticmethod
+    def _coerce_transcription_result(
+        transcription: str | TranscriptionResult, model: str
+    ) -> TranscriptionResult:
+        if isinstance(transcription, TranscriptionResult):
+            return transcription
+
+        return TranscriptionResult(text=transcription, model=model)
 
     async def _correct_with_llm(self, text: str, custom_prompt: Optional[str]) -> str:
         """Use an LLM to refine the transcription text."""

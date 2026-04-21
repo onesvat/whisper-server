@@ -29,8 +29,8 @@ class Task(str, Enum):
 AUTO_LANGUAGE = "auto"
 AUTO_MODEL = "auto"
 TARGET_SAMPLE_RATE = 16000
-SUPPORTED_RESPONSE_FORMATS = {"json", "text"}
-UNSUPPORTED_RESPONSE_FORMATS = {"verbose_json", "srt", "vtt", "diarized_json"}
+SUPPORTED_RESPONSE_FORMATS = {"json", "text", "verbose_json"}
+UNSUPPORTED_RESPONSE_FORMATS = {"srt", "vtt", "diarized_json"}
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,7 @@ class TranscriptionRequest:
     initial_prompt: Optional[str] = None
     speaker_enabled: bool = False
     vad_filter: bool = True
+    word_timestamps: bool = False
     llm_correct: bool = False
     llm_prompt: Optional[str] = None
 
@@ -79,8 +80,38 @@ class TranscriptionResult:
 
     text: str
     model: str
+    language: Optional[str] = None
+    duration: Optional[float] = None
+    segments: Optional[list["TranscriptionSegment"]] = None
     speaker: Optional[str] = None
     speaker_score: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class TranscriptionWord:
+    """Word-level timestamp metadata."""
+
+    word: str
+    start: float
+    end: float
+    probability: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class TranscriptionSegment:
+    """Segment-level timestamp metadata."""
+
+    id: int
+    seek: int
+    start: float
+    end: float
+    text: str
+    tokens: list[int]
+    temperature: float
+    avg_logprob: float
+    compression_ratio: float
+    no_speech_prob: float
+    words: Optional[list[TranscriptionWord]] = None
 
 
 AudioLike = Union[str, Path, np.ndarray]
@@ -98,5 +129,6 @@ class Transcriber(ABC):
         beam_size: int = 5,
         initial_prompt: Optional[str] = None,
         vad_filter: Optional[bool] = None,
-    ) -> str:
+        word_timestamps: bool = False,
+    ) -> TranscriptionResult:
         """Transcribe or translate audio input."""

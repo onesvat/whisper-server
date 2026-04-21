@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import (
@@ -129,6 +130,7 @@ def create_app(service: SpeechService) -> FastAPI:
         prompt: Annotated[str | None, Form()] = None,
         response_format: Annotated[str, Form()] = "json",
         vad_filter: Annotated[bool, Form()] = True,
+        word_timestamps: Annotated[bool, Form()] = False,
         llm_correct: Annotated[bool, Form()] = False,
         llm_prompt: Annotated[str | None, Form()] = None,
         api_key: str = Depends(verify_api_key),
@@ -142,6 +144,7 @@ def create_app(service: SpeechService) -> FastAPI:
             prompt=prompt,
             response_format=response_format,
             vad_filter=vad_filter,
+            word_timestamps=word_timestamps,
             llm_correct=llm_correct,
             llm_prompt=llm_prompt,
             api_key=api_key,
@@ -157,6 +160,7 @@ def create_app(service: SpeechService) -> FastAPI:
         prompt: Annotated[str | None, Form()] = None,
         response_format: Annotated[str, Form()] = "json",
         vad_filter: Annotated[bool, Form()] = True,
+        word_timestamps: Annotated[bool, Form()] = False,
         llm_correct: Annotated[bool, Form()] = False,
         llm_prompt: Annotated[str | None, Form()] = None,
         api_key: str = Depends(verify_api_key),
@@ -170,6 +174,7 @@ def create_app(service: SpeechService) -> FastAPI:
             prompt=prompt,
             response_format=response_format,
             vad_filter=vad_filter,
+            word_timestamps=word_timestamps,
             llm_correct=llm_correct,
             llm_prompt=llm_prompt,
             api_key=api_key,
@@ -188,11 +193,19 @@ async def _handle_audio_request(
     prompt: str | None,
     response_format: str,
     vad_filter: bool,
+    word_timestamps: bool,
     llm_correct: bool,
     llm_prompt: str | None,
     api_key: str | None = None,
 ):
     _validate_response_format(response_format)
+    _validate_verbose_json_options(
+        service=service,
+        model=model,
+        response_format=response_format,
+        word_timestamps=word_timestamps,
+        llm_correct=llm_correct,
+    )
 
     if not is_valid_model_name(model):
         raise InvalidTranscriptionRequest(
@@ -215,6 +228,7 @@ async def _handle_audio_request(
         task=task,
         initial_prompt=prompt,
         vad_filter=vad_filter,
+        word_timestamps=word_timestamps,
         llm_correct=llm_correct,
         llm_prompt=llm_prompt,
     )
@@ -222,6 +236,9 @@ async def _handle_audio_request(
 
     if response_format == "text":
         return PlainTextResponse(result.text)
+
+    if response_format == "verbose_json":
+        return JSONResponse(_serialize_verbose_json(task, result))
 
     return JSONResponse({"text": result.text})
 
@@ -236,3 +253,53 @@ def _validate_response_format(response_format: str) -> None:
         )
 
     raise InvalidTranscriptionRequest(f"unknown response_format '{response_format}'")
+
+
+def _validate_verbose_json_options(
+    *,
+    service: SpeechService,
+    model: str,
+    response_format: str,
+    word_timestamps: bool,
+    llm_correct: bool,
+) -> None:
+    if word_timestamps and response_format != "verbose_json":
+        raise InvalidTranscriptionRequest(
+            "word_timestamps=true requires response_format=verbose_json"
+        )
+
+    if response_format != "verbose_json":
+        return
+
+    if service.provider == "openai":
+        raise InvalidTranscriptionRequest(
+            "response_format 'verbose_json' is only supported for the local faster-whisper provider"
+        )
+
+    if llm_correct:
+        raise InvalidTranscriptionRequest(
+            "response_format 'verbose_json' cannot be combined with llm_correct=true"
+        )
+
+    if model.startswith("speaker:"):
+        raise InvalidTranscriptionRequest(
+            "response_format 'verbose_json' cannot be combined with speaker: model aliases"
+        )
+
+
+def _serialize_verbose_json(task: Task, result) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "task": task.value,
+        "language": result.language,
+        "duration": result.duration,
+        "text": result.text,
+        "segments": [],
+    }
+
+    for segment in result.segments or []:
+        segment_payload = asdict(segment)
+        if segment.words is None:
+            segment_payload.pop("words", None)
+        payload["segments"].append(segment_payload)
+
+    return payload

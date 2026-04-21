@@ -7,7 +7,13 @@ from typing import Any, Dict, Optional, Union
 
 import faster_whisper
 
-from .const import Task, Transcriber
+from .const import (
+    Task,
+    Transcriber,
+    TranscriptionResult,
+    TranscriptionSegment,
+    TranscriptionWord,
+)
 
 
 class FasterWhisperTranscriber(Transcriber):
@@ -42,11 +48,12 @@ class FasterWhisperTranscriber(Transcriber):
         beam_size: int = 5,
         initial_prompt: Optional[str] = None,
         vad_filter: Optional[bool] = None,
-    ) -> str:
+        word_timestamps: bool = False,
+    ) -> TranscriptionResult:
         if vad_filter is None:
             vad_filter = self.vad_filter
 
-        segments, _info = self.model.transcribe(
+        segments, info = self.model.transcribe(
             audio,
             language=language,
             task=task.value,
@@ -54,5 +61,48 @@ class FasterWhisperTranscriber(Transcriber):
             initial_prompt=initial_prompt,
             vad_filter=vad_filter,
             vad_parameters=self.vad_parameters,
+            word_timestamps=word_timestamps,
         )
-        return " ".join(segment.text.strip() for segment in segments if segment.text.strip())
+        serialized_segments: list[TranscriptionSegment] = []
+        text_parts: list[str] = []
+
+        for segment in segments:
+            segment_text = segment.text.strip()
+            if segment_text:
+                text_parts.append(segment_text)
+
+            words = None
+            if word_timestamps:
+                words = [
+                    TranscriptionWord(
+                        word=word.word,
+                        start=word.start,
+                        end=word.end,
+                        probability=getattr(word, "probability", None),
+                    )
+                    for word in (segment.words or [])
+                ]
+
+            serialized_segments.append(
+                TranscriptionSegment(
+                    id=segment.id,
+                    seek=segment.seek,
+                    start=segment.start,
+                    end=segment.end,
+                    text=segment.text,
+                    tokens=list(segment.tokens),
+                    temperature=segment.temperature,
+                    avg_logprob=segment.avg_logprob,
+                    compression_ratio=segment.compression_ratio,
+                    no_speech_prob=segment.no_speech_prob,
+                    words=words,
+                )
+            )
+
+        return TranscriptionResult(
+            text=" ".join(text_parts),
+            model=getattr(self.model, "model_size_or_path", "faster-whisper"),
+            language=getattr(info, "language", None),
+            duration=getattr(info, "duration", None),
+            segments=serialized_segments,
+        )
