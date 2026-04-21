@@ -14,7 +14,7 @@ from openai import AsyncOpenAI
 from .audio import normalize_audio, temporary_audio_file
 from .const import ModelSelection, Task, TranscriptionRequest, TranscriptionResult
 from .key_manager import KeyManager
-from .models import ModelLoader
+from .models import PREDEFINED_MODELS, ModelLoader, normalize_model_name
 from .speaker_recognition import SpeakerRecognizer
 from .storage import StorageManager
 
@@ -45,6 +45,8 @@ class SpeechService:
         self._speaker_recognizer = speaker_recognizer
         self._key_manager = key_manager
         self._storage_manager = storage_manager
+        self._model_last_used: dict[str, float] = {}
+        self._pinned_models: set[str] = set()
 
         llm_base_url = os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1")
         llm_api_key = os.environ.get("LLM_API_KEY", "lm-studio")
@@ -63,6 +65,9 @@ class SpeechService:
         resolved_model, _transcriber = await self._loader.load_transcriber(
             language=language, requested_model=selection.model
         )
+        # Warmup models are considered boot-time and must not be auto-unloaded.
+        self._pinned_models.add(resolved_model)
+        self._mark_model_used(resolved_model)
         return resolved_model
 
     async def transcribe(
@@ -73,6 +78,7 @@ class SpeechService:
         resolved_model, transcriber = await self._loader.load_transcriber(
             language=request.language, requested_model=request.model
         )
+        self._mark_model_used(resolved_model)
 
         normalized_audio = None
         if (self.provider != "openai") or request.speaker_enabled or self._storage_manager:
@@ -154,6 +160,77 @@ class SpeechService:
             speaker_score=speaker_score,
         )
 
+    def get_models(self) -> list[dict[str, object]]:
+        """Return model catalog with current cache status."""
+        loaded_models = {model for _, model in self._loader._transcriber.keys()}
+        result: list[dict[str, object]] = []
+        known_model_ids: set[str] = set()
+
+        for alias, model_id in PREDEFINED_MODELS.items():
+            known_model_ids.add(model_id)
+            result.append(
+                {
+                    "id": alias,
+                    "model_id": model_id,
+                    "ready": model_id in loaded_models,
+                    "downloaded": model_id in loaded_models,
+                    "available": True,
+                }
+            )
+
+        for model_id in sorted(loaded_models):
+            if model_id in known_model_ids:
+                continue
+            result.append(
+                {
+                    "id": model_id,
+                    "model_id": model_id,
+                    "ready": True,
+                    "downloaded": True,
+                    "available": True,
+                }
+            )
+
+        return result
+
+    async def unload_model(self, model_id: str) -> bool:
+        """Unload a model from memory cache by alias or full model ID."""
+        normalized_id = normalize_model_name(model_id)
+        candidates = [normalized_id]
+        if model_id != normalized_id:
+            candidates.append(model_id)
+
+        loaded_keys = list(self._loader._transcriber.keys())
+        for candidate in candidates:
+            for key in loaded_keys:
+                _library, loaded_model_id = key
+                if loaded_model_id != candidate:
+                    continue
+                self._loader._transcriber.pop(key, None)
+                self._model_last_used.pop(loaded_model_id, None)
+                self._pinned_models.discard(loaded_model_id)
+                return True
+
+        return False
+
+    async def unload_idle_models(self, ttl_seconds: float) -> int:
+        """Unload idle models except pinned boot-time models."""
+        now = time.monotonic()
+        unloaded = 0
+
+        for key in list(self._loader._transcriber.keys()):
+            _library, model_id = key
+            if model_id in self._pinned_models:
+                continue
+            last_used = self._model_last_used.get(model_id, 0.0)
+            if (now - last_used) <= ttl_seconds:
+                continue
+            self._loader._transcriber.pop(key, None)
+            self._model_last_used.pop(model_id, None)
+            unloaded += 1
+
+        return unloaded
+
     def _resolve_request(self, request: TranscriptionRequest) -> TranscriptionRequest:
         selection = parse_model_alias(request.model)
         prompt = request.initial_prompt
@@ -168,6 +245,9 @@ class SpeechService:
             initial_prompt=prompt,
             speaker_enabled=request.speaker_enabled or selection.speaker_enabled,
         )
+
+    def _mark_model_used(self, model_id: str) -> None:
+        self._model_last_used[model_id] = time.monotonic()
 
     @staticmethod
     def _transcribe_openai(transcriber, request: TranscriptionRequest) -> str:

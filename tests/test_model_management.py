@@ -63,18 +63,25 @@ async def test_model_unload(service, client):
 
 @pytest.mark.asyncio
 async def test_auto_unload(service):
-    # Load model
-    await service._loader.load_transcriber(requested_model="tiny")
-    
-    # Check it's in cache
+    # Warmup model (boot-time / pinned)
+    await service.warmup(model="tiny")
+
+    # Load another model later at runtime
+    await service._loader.load_transcriber(requested_model="small")
+
+    # Check both are in cache
     info = service.get_models()
     tiny_info = next(m for m in info if m["id"] == "tiny")
+    small_info = next(m for m in info if m["id"] == "small")
     assert tiny_info["ready"] is True
-    
-    # Force auto unload with 0 TTL (everything idle is unloaded)
+    assert small_info["ready"] is True
+
+    # Force auto unload with 0 TTL (only non-pinned idle models are unloaded)
     await service.unload_idle_models(ttl_seconds=-1)
-    
-    # Check it's gone
+
+    # Warmup model remains, runtime-loaded model is unloaded
     info = service.get_models()
     tiny_info = next(m for m in info if m["id"] == "tiny")
-    assert tiny_info["ready"] is False
+    small_info = next(m for m in info if m["id"] == "small")
+    assert tiny_info["ready"] is True
+    assert small_info["ready"] is False
