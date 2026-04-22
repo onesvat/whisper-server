@@ -34,7 +34,6 @@ async def test_model_loader_reuses_request_scoped_override(monkeypatch):
         cpu_threads=1,
         initial_prompt=None,
         vad_parameters=None,
-        provider="local",
     )
 
     model_a, transcriber_a = await loader.load_transcriber(

@@ -1,34 +1,35 @@
 # whisper-server
 
-> Shared Wyoming TCP and OpenAI-compatible HTTP speech-to-text service with optional speaker tagging, VAD, and LLM correction.
+> Shared Wyoming TCP and OpenAI-compatible HTTP speech-to-text service powered by local `faster-whisper` models.
 
 [![Docker Hub](https://img.shields.io/docker/pulls/onesvat/whisper-server.svg)](https://hub.docker.com/r/onesvat/whisper-server)
 
-## ✨ Features
+## Overview
 
-- **Two Protocols, One Process**
-  - Wyoming TCP ASR on `10300`
-  - OpenAI-compatible HTTP STT on `8080`
-  - Shared model cache across both listeners
+`whisper-server` exposes two interfaces over the same local STT runtime:
 
-- **Two Transcription Providers**
-  - 🏠 **Local**: Faster-Whisper with CTranslate2
-  - ☁️ **OpenAI**: outbound OpenAI transcription and translation APIs
+- Wyoming TCP ASR, typically on `10300`
+- OpenAI-compatible HTTP audio routes, typically on `8080`
 
-- **🚀 Advanced Processing**
-  - **Silero VAD**: Built-in Voice Activity Detection to reduce hallucinations and skip silence.
-  - **LLM Correction**: Refine transcripts using local (LM Studio) or OpenAI-compatible LLMs.
-  - **Speaker Recognition**: Identify speakers based on reference voice samples.
+The server does not proxy outbound transcription requests to OpenAI. It runs local `faster-whisper` models directly and keeps the OpenAI-compatible HTTP routes as the client-facing interface.
 
-- **🔒 Production Ready**
-  - **Authentication**: Secure your API with multiple API keys (JSON-based).
-  - **Rate Limiting**: Per-key request limits to prevent abuse.
-  - **Usage Stats**: Track requests per key/hour in a local SQLite database.
-  - **Data Retention**: Automatically save audio/transcripts with auto-cleanup (FIFO).
+## Current Capabilities
 
-## 🚀 Quick Start
+- Single STT backend: `faster-whisper`
+- Local model aliases such as `tiny`, `base`, `small`, `medium`, `large-v3`, and `turbo`
+- OpenAI-compatible routes:
+  - `POST /v1/audio/transcriptions`
+  - `POST /v1/audio/translations`
+  - `GET /v1/models`
+  - `POST /v1/models/{model_id}/unload`
+  - `GET /healthz`
+- Shared model cache across Wyoming and HTTP
+- Optional Silero VAD
+- Optional LLM-based correction with `llm_correct`
+- Optional single-speaker matching via `speaker:<model>` aliases
+- Optional API keys, per-key rate limits, usage stats, and request storage
 
-### Option 1: Local Transcription (GPU Required)
+## Quick Start
 
 ```yaml
 # docker-compose.yml
@@ -43,15 +44,22 @@ services:
     ports:
       - "10300:10300"
       - "8080:8080"
-    command: [
-      "serve",
-      "--model", "large-v3",
-      "--data-dir", "/data",
-      "--device", "cuda",
-      "--compute-type", "float16",
-      "--keys-file", "/data/keys.json",
-      "--storage-dir", "/data/storage"
-    ]
+    command:
+      [
+        "serve",
+        "--model",
+        "large-v3",
+        "--data-dir",
+        "/data",
+        "--device",
+        "cuda",
+        "--compute-type",
+        "float16",
+        "--keys-file",
+        "/data/keys.json",
+        "--storage-dir",
+        "/data/storage",
+      ]
     deploy:
       resources:
         reservations:
@@ -61,75 +69,69 @@ services:
               capabilities: [gpu]
 ```
 
-## 📖 New Features Guide
+## HTTP API
 
-### 1. VAD (Voice Activity Detection)
-The server uses Silero VAD to filter out non-speech segments. This is enabled by default for local providers.
-*   **API Toggle:** Pass `vad_filter=false` in the form-data to disable it for a specific request.
+### Endpoints
 
-### 2. LLM Post-Processing
-Refine your transcripts to fix grammar and punctuation using an external LLM.
-*   **Setup:** Set `LLM_BASE_URL` and `LLM_MODEL` environment variables.
-*   **Usage:** Pass `llm_correct=true` in your API request.
-*   **Custom Prompts:** Pass `llm_prompt="Your custom instructions"` to override the default correction style.
-
-### 3. API Key Management
-Issue and manage multiple keys via the CLI:
-```bash
-# List all keys
-whisper-server keys --keys-file keys.json list
-
-# Add a key for a mobile app
-whisper-server keys --keys-file keys.json add --key "my-secret-123" --name "Mobile App" --limit "30/minute"
-
-# Delete a key
-whisper-server keys --keys-file keys.json delete --key "old-key"
-```
-
-### 4. Usage Statistics
-Monitor how your API is being used:
-```bash
-whisper-server stats --stats-db data/stats.db --keys-file data/keys.json
-```
-
-### 5. Data Retention & Storage
-Save every request for auditing or training:
-*   Enable by providing `--storage-dir`.
-*   The server saves the original `.wav`, the raw transcript, and the LLM-corrected version.
-*   Old data is automatically deleted after $N$ days or when the directory exceeds $X$ GB.
-
-## 🧠 Supported Models (Local)
-
-VRAM requirements are approximate for `float16` (GPU standard) vs `int8` (optimized).
-
-| Alias | Full Model ID | VRAM (fp16) | VRAM (int8) | Use Case |
-|-------|---------------|-------------|-------------|----------|
-| **tiny** | `Systran/faster-whisper-tiny` | 0.6 GB | 0.4 GB | Testing |
-| **base** | `Systran/faster-whisper-base` | 0.7 GB | 0.5 GB | Real-time |
-| **small** | `Systran/faster-whisper-small` | 1.1 GB | 0.8 GB | General use |
-| **medium** | `Systran/faster-whisper-medium` | 2.5 GB | 1.6 GB | Good accuracy |
-| **large-v3** | `Systran/faster-whisper-large-v3` | 4.5 GB | 3.0 GB | **Best Accuracy** |
-| **turbo** | `deepdml/faster-whisper-large-v3-turbo-ct2` | 2.6 GB | 1.6 GB | **Fast + Accurate** |
-| **distil-large-v3** | `Systran/faster-distil-whisper-large-v3` | 2.4 GB | 1.5 GB | Extreme Speed |
-
-## 🎯 OpenAI-Compatible HTTP API
-
-Exposes:
 - `POST /v1/audio/transcriptions`
 - `POST /v1/audio/translations`
+- `GET /v1/models`
+- `POST /v1/models/{model_id}/unload`
+- `GET /healthz`
 
-**Additional Form Parameters:**
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `vad_filter` | bool | `true` | Enable/disable Silero VAD |
-| `response_format` | string | `json` | `json`, `text`, or local-only `verbose_json` |
-| `word_timestamps` | bool | `false` | Include per-word timestamps inside `verbose_json` segments |
-| `llm_correct` | bool | `false` | Enable LLM post-processing |
-| `llm_prompt` | string | - | Custom system prompt for the LLM |
+### Request Shape
 
-`verbose_json` is supported only by the local `faster-whisper` provider. It cannot be combined with `llm_correct=true` or `speaker:<model>` aliases. `word_timestamps=true` is only valid when `response_format=verbose_json`.
+The audio routes accept `multipart/form-data`.
 
-**Example with Auth:**
+Required fields:
+
+- `file`: audio upload
+- `model`: local model alias, HuggingFace model ID, local path, or `speaker:<model>`
+
+Optional fields:
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `language` | string | auto | Optional language hint |
+| `prompt` | string | none | Initial prompt for transcription |
+| `response_format` | string | `json` | `json`, `text`, `verbose_json` |
+| `vad_filter` | bool | `true` | Enable or disable Silero VAD |
+| `word_timestamps` | bool | `false` | Only valid with `response_format=verbose_json` |
+| `llm_correct` | bool | `false` | Post-process transcript with an LLM |
+| `llm_prompt` | string | none | Override the default LLM correction prompt |
+
+### Response Formats
+
+Currently supported:
+
+- `json`
+- `text`
+- `verbose_json`
+
+Currently not supported:
+
+- `srt`
+- `vtt`
+- `diarized_json`
+
+Validation rules:
+
+- `word_timestamps=true` requires `response_format=verbose_json`
+- `response_format=verbose_json` cannot be combined with `llm_correct=true`
+- `response_format=verbose_json` cannot be combined with `speaker:<model>`
+
+### Examples
+
+Basic transcription:
+
+```bash
+curl -X POST http://localhost:8080/v1/audio/transcriptions \
+  -F "file=@sample.wav" \
+  -F "model=large-v3"
+```
+
+Authenticated request with LLM correction:
+
 ```bash
 curl -X POST http://localhost:8080/v1/audio/transcriptions \
   -H "Authorization: Bearer my-secret-123" \
@@ -138,7 +140,8 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
   -F "llm_correct=true"
 ```
 
-**Example `verbose_json` with word timestamps:**
+Verbose JSON with word timestamps:
+
 ```bash
 curl -X POST http://localhost:8080/v1/audio/transcriptions \
   -F "file=@sample.wav" \
@@ -147,25 +150,117 @@ curl -X POST http://localhost:8080/v1/audio/transcriptions \
   -F "word_timestamps=true"
 ```
 
-## ⚙️ Environment Variables
+### OpenAI Compatibility Notes
+
+The HTTP routes intentionally resemble OpenAI Audio, but the implementation is local-first and feature-compatible only where it makes sense.
+
+- We keep the OpenAI-style route structure.
+- We do not use OpenAI model names.
+- We expose custom local features such as `vad_filter`, `llm_correct`, and `speaker:<model>`.
+- We do not currently implement streaming transcription, job polling, or diarized responses.
+
+## Wyoming API
+
+The Wyoming listener shares the same `SpeechService` and model cache as HTTP. Audio is collected as PCM, wrapped into WAV, transcribed locally, and returned as a Wyoming transcript event.
+
+## Supported Local Models
+
+VRAM requirements are approximate for `float16` vs `int8`.
+
+| Alias | Full Model ID | VRAM (fp16) | VRAM (int8) | Use Case |
+|---|---|---|---|---|
+| `tiny` | `Systran/faster-whisper-tiny` | 0.6 GB | 0.4 GB | Testing |
+| `base` | `Systran/faster-whisper-base` | 0.7 GB | 0.5 GB | Real-time |
+| `small` | `Systran/faster-whisper-small` | 1.1 GB | 0.8 GB | General use |
+| `medium` | `Systran/faster-whisper-medium` | 2.5 GB | 1.6 GB | Good accuracy |
+| `large-v3` | `Systran/faster-whisper-large-v3` | 4.5 GB | 3.0 GB | Best accuracy |
+| `turbo` | `deepdml/faster-whisper-large-v3-turbo-ct2` | 2.6 GB | 1.6 GB | Fast + accurate |
+| `distil-large-v3` | `Systran/faster-distil-whisper-large-v3` | 2.4 GB | 1.5 GB | Extreme speed |
+
+## Operations
+
+### API Key Management
+
+```bash
+whisper-server keys --keys-file keys.json list
+whisper-server keys --keys-file keys.json add --key "my-secret-123" --name "Mobile App" --limit "30/minute"
+whisper-server keys --keys-file keys.json delete --key "old-key"
+```
+
+### Usage Statistics
+
+```bash
+whisper-server stats --stats-db data/stats.db --keys-file data/keys.json
+```
+
+### Request Storage
+
+If `--storage-dir` is enabled, the server stores:
+
+- the uploaded audio
+- the raw transcription
+- the LLM-corrected text when `llm_correct=true`
+
+Stored requests are pruned by retention days and max storage size.
+
+## Environment Variables
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_API_KEY` | - | Required for OpenAI provider |
-| `LLM_BASE_URL` | `http://localhost:1234/v1` | URL for the LLM server (LM Studio/OpenAI) |
-| `LLM_API_KEY` | `lm-studio` | API key for the LLM server |
-| `LLM_MODEL` | `local-model` | Model name to use for LLM correction |
-| `VOICES_DIR` | `/data/voices` | Directory for speaker reference files |
-| `SPEAKER_THRESHOLD` | `0.80` | Speaker matching threshold (0-1) |
-| `RETENTION_DAYS` | `30` | Days to keep logs in storage |
-| `RETENTION_MAX_GB` | `10.0` | Maximum size for storage dir |
+|---|---|---|
+| `LLM_BASE_URL` | `http://localhost:1234/v1` | Base URL for the LLM correction backend |
+| `LLM_API_KEY` | `lm-studio` | API key for the LLM correction backend |
+| `LLM_MODEL` | `local-model` | Model name for LLM correction |
+| `VOICES_DIR` | `/data/voices` | Directory containing reference speaker clips |
+| `SPEAKER_THRESHOLD` | `0.80` | Speaker matching threshold |
+| `RETENTION_DAYS` | `30` | Days to keep stored requests |
+| `RETENTION_MAX_GB` | `10.0` | Max request storage size in GB |
 
-## 🛠️ CLI Subcommands
+## CLI
 
-- `serve`: Start the STT and Wyoming listeners.
-- `stats`: Display usage statistics from the SQLite DB.
-- `keys`: Add, remove, or list API keys in the JSON config.
+Main subcommands:
 
-## 📝 License
+- `serve`
+- `stats`
+- `keys`
+
+Useful `serve` flags:
+
+- `--uri`
+- `--openai-http-host`
+- `--openai-http-port`
+- `--model`
+- `--language`
+- `--device`
+- `--compute-type`
+- `--beam-size`
+- `--cpu-threads`
+- `--vad-filter`
+- `--keys-file`
+- `--stats-db`
+- `--storage-dir`
+
+## Roadmap
+
+Near-term improvements:
+
+- Add `srt` and `vtt` response formats
+- Add OpenAI-style `timestamp_granularities` aliases on top of the existing timestamp support
+- Improve long-audio handling with chunking and merge logic
+- Tighten README and API documentation as the HTTP surface evolves
+
+Potential future work:
+
+- `stream=true` for completed audio uploads
+- Optional async job flow for long-running transcriptions
+- Better compatibility aliases where they improve client ergonomics
+- Real diarization only if a dedicated diarization pipeline is introduced
+
+Explicitly out of scope for now:
+
+- Fake OpenAI model names
+- Outbound OpenAI transcription providers
+- Pretending current single-speaker matching is full diarization
+
+## License
 
 MIT License

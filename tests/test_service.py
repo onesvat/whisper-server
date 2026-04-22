@@ -99,8 +99,7 @@ class FakeTranscriber:
 
 
 class FakeLoader:
-    def __init__(self, provider: str = "local") -> None:
-        self.provider = provider
+    def __init__(self) -> None:
         self.preferred_language = "tr"
         self.initial_prompt = "startup prompt"
         self.beam_size = 5

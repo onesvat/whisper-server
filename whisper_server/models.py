@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import platform
-import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
@@ -53,7 +52,6 @@ class ModelLoader:
         cpu_threads: int,
         initial_prompt: Optional[str],
         vad_parameters: Optional[Dict[str, Any]],
-        provider: str = "local",
     ) -> None:
         self.preferred_stt_library = preferred_stt_library
         self.preferred_language = preferred_language
@@ -66,7 +64,6 @@ class ModelLoader:
         self.cpu_threads = cpu_threads
         self.initial_prompt = initial_prompt
         self.vad_parameters = vad_parameters
-        self.provider = provider
 
         self._transcriber: Dict[TRANSCRIBER_KEY, Transcriber] = {}
         self._transcriber_lock: Dict[TRANSCRIBER_KEY, asyncio.Lock] = defaultdict(
@@ -81,12 +78,9 @@ class ModelLoader:
         language = language or self.preferred_language
 
         if model is None:
-            if self.provider == "openai":
-                model = "gpt-4o-transcribe"
-            else:
-                machine = platform.machine().lower()
-                is_arm = ("arm" in machine) or ("aarch" in machine)
-                model = guess_model(self.preferred_stt_library, language, is_arm)
+            machine = platform.machine().lower()
+            is_arm = ("arm" in machine) or ("aarch" in machine)
+            model = guess_model(self.preferred_stt_library, language, is_arm)
 
         return normalize_model_name(model)
 
@@ -97,11 +91,7 @@ class ModelLoader:
         language = language or self.preferred_language
         stt_library = self.preferred_stt_library
         if stt_library == SttLibrary.AUTO:
-            stt_library = (
-                SttLibrary.OPENAI
-                if self.provider == "openai"
-                else SttLibrary.FASTER_WHISPER
-            )
+            stt_library = SttLibrary.FASTER_WHISPER
 
         model = self.resolve_model_name(requested_model, language=language)
         _LOGGER.debug(
@@ -114,21 +104,16 @@ class ModelLoader:
             if transcriber is not None:
                 return model, transcriber
 
-            if self.provider == "openai":
-                from .openai_transcriber import OpenAITranscriber
-
-                transcriber = OpenAITranscriber(model_id=model)
-            else:
-                models_dir = self.download_dir / "models"
-                models_dir.mkdir(parents=True, exist_ok=True)
-                transcriber = FasterWhisperTranscriber(
-                    model,
-                    cache_dir=models_dir,
-                    device=self.device,
-                    compute_type=self.compute_type,
-                    cpu_threads=self.cpu_threads,
-                    vad_parameters=self.vad_parameters,
-                )
+            models_dir = self.download_dir / "models"
+            models_dir.mkdir(parents=True, exist_ok=True)
+            transcriber = FasterWhisperTranscriber(
+                model,
+                cache_dir=models_dir,
+                device=self.device,
+                compute_type=self.compute_type,
+                cpu_threads=self.cpu_threads,
+                vad_parameters=self.vad_parameters,
+            )
 
             self._transcriber[key] = transcriber
 

@@ -200,7 +200,6 @@ async def _handle_audio_request(
 ):
     _validate_response_format(response_format)
     _validate_verbose_json_options(
-        service=service,
         model=model,
         response_format=response_format,
         word_timestamps=word_timestamps,
@@ -257,7 +256,6 @@ def _validate_response_format(response_format: str) -> None:
 
 def _validate_verbose_json_options(
     *,
-    service: SpeechService,
     model: str,
     response_format: str,
     word_timestamps: bool,
@@ -270,11 +268,6 @@ def _validate_verbose_json_options(
 
     if response_format != "verbose_json":
         return
-
-    if service.provider == "openai":
-        raise InvalidTranscriptionRequest(
-            "response_format 'verbose_json' is only supported for the local faster-whisper provider"
-        )
 
     if llm_correct:
         raise InvalidTranscriptionRequest(

@@ -16,7 +16,6 @@ class SttLibrary(str, Enum):
 
     AUTO = "auto"
     FASTER_WHISPER = "faster-whisper"
-    OPENAI = "openai"
 
 
 class Task(str, Enum):

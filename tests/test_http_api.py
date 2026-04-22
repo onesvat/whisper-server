@@ -6,10 +6,9 @@ from whisper_server.service import InvalidTranscriptionRequest
 
 
 class RecordingService:
-    def __init__(self, provider: str = "local") -> None:
+    def __init__(self) -> None:
         self.calls = []
         self._key_manager = None
-        self.provider = provider
 
     async def transcribe(self, request, api_key=None):
         if request.model == "speaker:":
@@ -265,21 +264,8 @@ def test_translation_verbose_json_sets_task():
     assert response.json()["task"] == "translate"
 
 
-def test_verbose_json_rejected_for_openai_provider():
-    service = RecordingService(provider="openai")
-    client = TestClient(create_app(service))
-
-    response = client.post(
-        "/v1/audio/transcriptions",
-        files=_multipart(response_format="verbose_json"),
-    )
-
-    assert response.status_code == 400
-    assert "only supported for the local faster-whisper provider" in response.json()["error"]["message"]
-
-
-def test_plain_json_still_allowed_for_openai_provider():
-    service = RecordingService(provider="openai")
+def test_plain_json_response_still_allowed():
+    service = RecordingService()
     client = TestClient(create_app(service))
 
     response = client.post("/v1/audio/transcriptions", files=_multipart())

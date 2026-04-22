@@ -127,7 +127,7 @@ async def main() -> None:
         "--vad-filter",
         action="store_true",
         default=os.environ.get("WHISPER_VAD_FILTER", "").lower() == "true",
-        help="Enable Silero VAD to reduce hallucinations (local provider only)",
+        help="Enable Silero VAD to reduce hallucinations",
     )
     serve_parser.add_argument(
         "--vad-threshold",
@@ -151,13 +151,7 @@ async def main() -> None:
         "--stt-library",
         choices=[lib.value for lib in SttLibrary],
         default=os.environ.get("WHISPER_STT_LIBRARY", SttLibrary.AUTO.value),
-        help="Set library to use for speech-to-text",
-    )
-    serve_parser.add_argument(
-        "--provider",
-        choices=["local", "openai"],
-        default=os.environ.get("WHISPER_PROVIDER", "local"),
-        help="Transcription provider: local or openai (default: local)",
+        help="Set speech-to-text library (auto resolves to faster-whisper)",
     )
     serve_parser.add_argument(
         "--local-files-only",
@@ -358,7 +352,6 @@ async def main() -> None:
         cpu_threads=args.cpu_threads,
         initial_prompt=args.initial_prompt,
         vad_parameters=vad_parameters,
-        provider=args.provider,
     )
     service = SpeechService(
         loader=loader,

@@ -19,7 +19,6 @@ def service():
         cpu_threads=1,
         initial_prompt=None,
         vad_parameters=None,
-        provider="local",
     )
     return SpeechService(loader=loader)
 

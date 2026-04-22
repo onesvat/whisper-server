@@ -11,7 +11,7 @@ from typing import Optional
 
 from openai import AsyncOpenAI
 
-from .audio import normalize_audio, temporary_audio_file
+from .audio import normalize_audio
 from .const import ModelSelection, Task, TranscriptionRequest, TranscriptionResult
 from .key_manager import KeyManager
 from .models import PREDEFINED_MODELS, ModelLoader, normalize_model_name
@@ -53,10 +53,6 @@ class SpeechService:
         self._llm_model = os.environ.get("LLM_MODEL", "local-model")
         self._llm_client = AsyncOpenAI(base_url=llm_base_url, api_key=llm_api_key)
 
-    @property
-    def provider(self) -> str:
-        return self._loader.provider
-
     async def warmup(
         self, model: Optional[str] = None, language: Optional[str] = None
     ) -> str:
@@ -80,45 +76,34 @@ class SpeechService:
         )
         self._mark_model_used(resolved_model)
 
-        normalized_audio = None
-        if (self.provider != "openai") or request.speaker_enabled or self._storage_manager:
-            try:
-                normalized_audio = await asyncio.to_thread(normalize_audio, request.audio)
-            except Exception as err:
-                raise InvalidTranscriptionRequest(f"failed to decode audio: {err}") from err
+        try:
+            normalized_audio = await asyncio.to_thread(normalize_audio, request.audio)
+        except Exception as err:
+            raise InvalidTranscriptionRequest(f"failed to decode audio: {err}") from err
 
         start_time = time.perf_counter()
-        if self.provider == "openai":
-            transcription = await asyncio.to_thread(
-                self._transcribe_openai,
-                transcriber,
-                request,
-            )
-        else:
-            assert normalized_audio is not None
-            transcription = await asyncio.to_thread(
-                transcriber.transcribe,
-                normalized_audio.samples,
-                request.language,
-                request.task,
-                self._loader.beam_size,
-                request.initial_prompt,
-                request.vad_filter,
-                request.word_timestamps,
-            )
+        transcription = await asyncio.to_thread(
+            transcriber.transcribe,
+            normalized_audio.samples,
+            request.language,
+            request.task,
+            self._loader.beam_size,
+            request.initial_prompt,
+            request.vad_filter,
+            request.word_timestamps,
+        )
         transcription = self._coerce_transcription_result(transcription, resolved_model)
         text = transcription.text
         end_time = time.perf_counter()
         duration = end_time - start_time
 
         _LOGGER.info(
-            "Transcription finished: model=%s, duration=%.2fs, beam_size=%s, compute_type=%s, device=%s, provider=%s, output=%r",
+            "Transcription finished: model=%s, duration=%.2fs, beam_size=%s, compute_type=%s, device=%s, output=%r",
             resolved_model,
             duration,
-            self._loader.beam_size if self.provider != "openai" else "N/A",
+            self._loader.beam_size,
             getattr(transcriber, "compute_type", "N/A"),
             getattr(transcriber, "device", "N/A"),
-            self.provider,
             text,
         )
 
@@ -254,20 +239,6 @@ class SpeechService:
 
     def _mark_model_used(self, model_id: str) -> None:
         self._model_last_used[model_id] = time.monotonic()
-
-    @staticmethod
-    def _transcribe_openai(
-        transcriber, request: TranscriptionRequest
-    ) -> str | TranscriptionResult:
-        with temporary_audio_file(request.audio) as audio_path:
-            return transcriber.transcribe(
-                audio_path,
-                request.language,
-                request.task,
-                initial_prompt=request.initial_prompt,
-                vad_filter=request.vad_filter,
-                word_timestamps=request.word_timestamps,
-            )
 
     @staticmethod
     def _coerce_transcription_result(

@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import io
 import wave
-from contextlib import contextmanager
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import Iterator
 
 import numpy as np
 from faster_whisper.audio import decode_audio
@@ -49,17 +46,3 @@ def wav_bytes_from_float32(
     clipped = np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0)
     pcm = (clipped * 32767.0).astype("<i2", copy=False).tobytes()
     return wav_bytes_from_pcm16(pcm, sample_rate=sample_rate)
-
-
-@contextmanager
-def temporary_audio_file(audio: AudioInput) -> Iterator[Path]:
-    """Write uploaded audio to a temporary file for APIs that need a path."""
-    suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
-    with NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-        tmp_file.write(audio.data)
-        tmp_path = Path(tmp_file.name)
-
-    try:
-        yield tmp_path
-    finally:
-        tmp_path.unlink(missing_ok=True)
